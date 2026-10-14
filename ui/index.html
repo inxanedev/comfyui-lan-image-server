@@ -29,7 +29,7 @@
             <span id="tabIndicator"></span>
             <button id="tabGallery" class="tab-btn active" role="tab" onclick="switchTab('gallery')">Gallery</button>
             <button id="tabLive" class="tab-btn" role="tab" onclick="switchTab('live')">Live</button>
-            <button id="tabPrompt" class="tab-btn" role="tab" onclick="switchTab('prompt')">Prompt</button>
+            <button id="tabPrompt" class="tab-btn" role="tab" onclick="switchTab('prompt')">Settings</button>
         </div>
         <button id="themeToggle" class="icon-btn" onclick="toggleTheme()" aria-label="Toggle light and dark mode">
             <svg class="ico ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -49,30 +49,84 @@
     </main>
 
     <section id="promptContainer">
-        <div class="prompt-header">
-            <span class="section-title">Workflow Text / Prompt</span>
-            <span id="promptBadge" class="badge">Default</span>
-        </div>
-
-        <div id="defaultPromptBox">
-            <div id="defaultPromptTitle">Workflow Default</div>
-            <div id="defaultPromptText"></div>
-        </div>
-
-        <textarea id="promptInput" placeholder="Enter custom prompt text here..."></textarea>
-
-        <div class="prompt-actions">
-            <button id="revertBtn" class="btn" onclick="revertText()" style="flex: 1;" disabled>Revert to default</button>
-            <button id="saveBtn" class="btn btn-save" onclick="saveText()" style="flex: 1;">Save</button>
-        </div>
-        <div id="promptNotice"></div>
-
-        <div id="seedSection">
-            <div class="prompt-header">
-                <span class="seed-title">Seed (rgthree)</span>
-                <span id="seedBadge" class="badge">Default</span>
+        <div class="acc-item" data-acc="prompt" id="promptSection">
+            <button class="acc-header" type="button" aria-expanded="false" onclick="toggleAccordion('prompt')">
+                <span class="acc-title">Prompt</span>
+                <span id="promptBadge" class="badge">Default</span>
+                <svg class="acc-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+            </button>
+            <div class="acc-body">
+                <div class="acc-body-inner">
+                    <div id="defaultPromptBox">
+                        <div id="defaultPromptTitle">Workflow Default</div>
+                        <div id="defaultPromptText"></div>
+                    </div>
+                    <textarea id="promptInput" placeholder="Enter custom prompt text here..."></textarea>
+                    <div class="prompt-actions">
+                        <button id="revertBtn" class="btn" onclick="revertText()" style="flex: 1;" disabled>Revert to default</button>
+                        <button id="saveBtn" class="btn btn-save" onclick="saveText()" style="flex: 1;">Save</button>
+                    </div>
+                    <div id="promptNotice"></div>
+                </div>
             </div>
-            <div id="seedList" class="seed-list"></div>
+        </div>
+
+        <div class="acc-item" id="seedSection" data-acc="seed">
+            <button class="acc-header" type="button" aria-expanded="false" onclick="toggleAccordion('seed')">
+                <span class="acc-title">Seed (rgthree)</span>
+                <span id="seedBadge" class="badge">Default</span>
+                <svg class="acc-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+            </button>
+            <div class="acc-body">
+                <div class="acc-body-inner">
+                    <div id="seedList" class="seed-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="acc-item" data-acc="resolution" id="resolutionSection">
+            <button class="acc-header" type="button" aria-expanded="false" onclick="toggleAccordion('resolution')">
+                <span class="acc-title">Resolution</span>
+                <span id="resBadge" class="badge">1:1 &middot; 1.5 MP</span>
+                <svg class="acc-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+            </button>
+            <div class="acc-body">
+                <div class="acc-body-inner">
+                    <div class="res-field" id="resAutoFields">
+                        <label class="field-label" for="resAspect">Aspect Ratio</label>
+                        <select id="resAspect" class="select" onchange="onResolutionChange()">
+                            <option value="1:1">1:1</option>
+                            <option value="2:3">2:3</option>
+                            <option value="3:2">3:2</option>
+                            <option value="3:4">3:4</option>
+                            <option value="4:3">4:3</option>
+                            <option value="9:16">9:16</option>
+                            <option value="16:9">16:9</option>
+                            <option value="21:9">21:9</option>
+                        </select>
+                        <div class="field-row">
+                            <label class="field-label" for="resMp">Megapixels</label>
+                            <span id="resMpValue" class="field-value">1.5 MP</span>
+                        </div>
+                        <input type="range" id="resMp" class="slider" min="0.5" max="2" step="0.5" value="1.5" oninput="onResolutionChange()">
+                    </div>
+
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="resCustom" onchange="onResolutionChange()">
+                        <span>Custom</span>
+                    </label>
+
+                    <div class="res-field" id="resCustomFields" style="display:none;">
+                        <div class="res-wh-row">
+                            <input type="number" id="resWidth" class="res-input" min="16" max="8192" step="8" value="1224" oninput="onResolutionChange()" aria-label="Width">
+                            <span class="res-times">&times;</span>
+                            <input type="number" id="resHeight" class="res-input" min="16" max="8192" step="8" value="1224" oninput="onResolutionChange()" aria-label="Height">
+                        </div>
+                    </div>
+
+                    <div class="res-preview">Preview: <span id="resPreview">1224x1224 px</span></div>
+                </div>
+            </div>
         </div>
     </section>
 

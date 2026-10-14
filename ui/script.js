@@ -323,6 +323,7 @@ function updateWorkflowUI(data) {
 }
 
 async function runOnce() {
+    await flushResolution();
     if (currentTab === 'prompt' && promptInput) {
         await saveText();
     }
@@ -365,6 +366,7 @@ async function toggleLoop() {
             loopBtn.disabled = false;
         }
     } else {
+        await flushResolution();
         if (currentTab === 'prompt' && promptInput) {
             await saveText();
         }
@@ -515,6 +517,7 @@ function updateSeedUI(data) {
 
     if (!data.seeds.length) {
         seedSection.classList.remove('visible');
+        seedSection.classList.remove('open');
         seedList.innerHTML = '';
         return;
     }
@@ -606,6 +609,181 @@ async function setSeed(id, mode, value) {
         } else if (data && data.message) {
             alert(data.message);
         }
+    } catch (e) {}
+}
+
+/* ---------- Settings accordion ---------- */
+
+function toggleAccordion(name) {
+    const items = document.querySelectorAll('#promptContainer .acc-item');
+    const target = document.querySelector(`#promptContainer .acc-item[data-acc="${name}"]`);
+    if (!target) return;
+    const willOpen = !target.classList.contains('open');
+    items.forEach(item => {
+        item.classList.remove('open');
+        const header = item.querySelector('.acc-header');
+        if (header) header.setAttribute('aria-expanded', 'false');
+    });
+    if (willOpen) {
+        target.classList.add('open');
+        const header = target.querySelector('.acc-header');
+        if (header) header.setAttribute('aria-expanded', 'true');
+    }
+}
+
+/* ---------- Resolution settings ---------- */
+
+const RES_ASPECTS = {
+    '1:1': [1, 1], '2:3': [2, 3], '3:2': [3, 2], '3:4': [3, 4],
+    '4:3': [4, 3], '9:16': [9, 16], '16:9': [16, 9], '21:9': [21, 9]
+};
+
+let resState = {
+    aspect: '1:1', megapixels: 1.5, custom: false,
+    width: 1224, height: 1224, effective_width: 1224, effective_height: 1224
+};
+let resDirty = false;
+let resPostTimer = null;
+
+function resRound8(x) {
+    return Math.max(8, Math.round(x / 8) * 8);
+}
+
+function computeResolutionLocal(aspect, megapixels) {
+    const ratio = RES_ASPECTS[aspect] || [1, 1];
+    const a = ratio[0];
+    const b = ratio[1];
+    const total = Number(megapixels) * 1e6;
+    const height = Math.sqrt(total * b / a);
+    const width = Math.sqrt(total * a / b);
+    return [resRound8(width), resRound8(height)];
+}
+
+function clampInt(value, min, max) {
+    const n = parseInt(value, 10);
+    if (!Number.isFinite(n)) return min;
+    return Math.max(min, Math.min(max, n));
+}
+
+function formatMP(mp) {
+    return String(Math.round(Number(mp) * 10) / 10);
+}
+
+function applyResolutionState(data) {
+    if (!data) return;
+    if (data.aspect !== undefined) resState.aspect = data.aspect;
+    if (data.megapixels !== undefined) resState.megapixels = Number(data.megapixels);
+    if (data.custom !== undefined) resState.custom = !!data.custom;
+    if (data.width !== undefined) resState.width = Number(data.width);
+    if (data.height !== undefined) resState.height = Number(data.height);
+    if (data.effective_width !== undefined) resState.effective_width = data.effective_width;
+    if (data.effective_height !== undefined) resState.effective_height = data.effective_height;
+
+    const aspectEl = document.getElementById('resAspect');
+    const mpEl = document.getElementById('resMp');
+    const customEl = document.getElementById('resCustom');
+    const wEl = document.getElementById('resWidth');
+    const hEl = document.getElementById('resHeight');
+
+    if (aspectEl) aspectEl.value = resState.aspect;
+    if (mpEl) mpEl.value = String(resState.megapixels);
+    if (customEl) customEl.checked = resState.custom;
+    if (wEl && document.activeElement !== wEl) wEl.value = String(resState.width);
+    if (hEl && document.activeElement !== hEl) hEl.value = String(resState.height);
+
+    updateResolutionUI();
+}
+
+function updateResolutionUI() {
+    const customEl = document.getElementById('resCustom');
+    const autoFields = document.getElementById('resAutoFields');
+    const customFields = document.getElementById('resCustomFields');
+    const mpValue = document.getElementById('resMpValue');
+    const aspectEl = document.getElementById('resAspect');
+    const mpEl = document.getElementById('resMp');
+    const badge = document.getElementById('resBadge');
+    const preview = document.getElementById('resPreview');
+
+    const custom = customEl ? customEl.checked : resState.custom;
+    let width;
+    let height;
+
+    if (custom) {
+        const wEl = document.getElementById('resWidth');
+        const hEl = document.getElementById('resHeight');
+        width = clampInt(wEl ? wEl.value : resState.width, 16, 8192);
+        height = clampInt(hEl ? hEl.value : resState.height, 16, 8192);
+    } else {
+        const aspect = aspectEl ? aspectEl.value : resState.aspect;
+        const mp = mpEl ? Number(mpEl.value) : resState.megapixels;
+        const computed = computeResolutionLocal(aspect, mp);
+        width = computed[0];
+        height = computed[1];
+        if (mpValue) mpValue.textContent = formatMP(mp) + ' MP';
+    }
+
+    if (autoFields) autoFields.style.display = custom ? 'none' : 'flex';
+    if (customFields) customFields.style.display = custom ? 'flex' : 'none';
+    if (preview) preview.textContent = width + 'x' + height + ' px';
+    if (badge) {
+        badge.textContent = custom
+            ? 'Custom'
+            : (aspectEl ? aspectEl.value : resState.aspect) + ' \u00b7 ' + formatMP(mpEl ? mpEl.value : resState.megapixels) + ' MP';
+    }
+}
+
+function onResolutionChange() {
+    resDirty = true;
+    updateResolutionUI();
+    if (resPostTimer) clearTimeout(resPostTimer);
+    resPostTimer = setTimeout(() => {
+        resPostTimer = null;
+        postResolution();
+    }, 220);
+}
+
+async function postResolution() {
+    const customEl = document.getElementById('resCustom');
+    const aspectEl = document.getElementById('resAspect');
+    const mpEl = document.getElementById('resMp');
+    const wEl = document.getElementById('resWidth');
+    const hEl = document.getElementById('resHeight');
+
+    const body = {
+        custom: customEl ? customEl.checked : false,
+        aspect: aspectEl ? aspectEl.value : '1:1',
+        megapixels: mpEl ? Number(mpEl.value) : 1.5,
+        width: wEl ? clampInt(wEl.value, 16, 8192) : 1224,
+        height: hEl ? clampInt(hEl.value, 16, 8192) : 1224
+    };
+
+    try {
+        const resp = await fetch('/inx/resolution', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await resp.json();
+        resDirty = false;
+        applyResolutionState(data);
+    } catch (e) {}
+}
+
+async function flushResolution() {
+    if (!resDirty) return;
+    if (resPostTimer) {
+        clearTimeout(resPostTimer);
+        resPostTimer = null;
+    }
+    await postResolution();
+}
+
+async function loadResolution() {
+    try {
+        const resp = await fetch('/inx/resolution');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        applyResolutionState(data);
     } catch (e) {}
 }
 
@@ -754,10 +932,16 @@ function connectWS() {
                     } else {
                         refreshSeeds();
                     }
+
+                    if (data.resolution) {
+                        applyResolutionState(data.resolution);
+                    }
                 } else if (data.type === 'text_update') {
                     updatePromptUI(data);
                 } else if (data.type === 'seed_update') {
                     updateSeedUI(data);
+                } else if (data.type === 'resolution_update') {
+                    applyResolutionState(data);
                 } else if (data.type === 'workflow_status') {
                     updateWorkflowUI(data);
                 } else if (data.type === 'cleared') {
@@ -801,3 +985,4 @@ fetch('/inx/text')
     .then(data => updatePromptUI(data))
     .catch(() => {});
 refreshSeeds();
+loadResolution();

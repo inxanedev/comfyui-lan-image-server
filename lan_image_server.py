@@ -1,6 +1,7 @@
 import copy
 import io
 import json
+import math
 import os
 import random
 import shutil
@@ -38,6 +39,24 @@ RGTHREE_SEED_CLASS = "Seed (rgthree)"
 RGTHREE_SEED_MAX = 1125899906842624
 SEED_OVERRIDES = {}
 SKIP_NEXT_CAPTURE = False
+
+# Resolution settings (Serve Resolution on LAN)
+ASPECT_RATIOS = {
+    "1:1": (1, 1),
+    "2:3": (2, 3),
+    "3:2": (3, 2),
+    "3:4": (3, 4),
+    "4:3": (4, 3),
+    "9:16": (9, 16),
+    "16:9": (16, 9),
+    "21:9": (21, 9),
+}
+RES_ASPECT = "1:1"
+RES_MEGAPIXELS = 1.5
+RES_CUSTOM = False
+RES_CUSTOM_WIDTH = 1224
+RES_CUSTOM_HEIGHT = 1224
+RESOLUTION_REVISION = 0
 
 def ensure_clean_temp_dir():
     """Clears the temp directory when the server starts for the first time."""
@@ -198,6 +217,38 @@ def apply_seed_overrides(prompt):
             node.setdefault("inputs", {})["seed"] = int(override.get("value", 0))
 
 
+def _round_to_8(value):
+    return max(8, int(round(value / 8.0)) * 8)
+
+
+def compute_resolution(aspect, megapixels):
+    """Computes width/height for an aspect ratio and megapixel budget (rounded to /8)."""
+    a, b = ASPECT_RATIOS.get(aspect, (1, 1))
+    total = float(megapixels) * 1_000_000.0
+    height = math.sqrt(total * b / a)
+    width = math.sqrt(total * a / b)
+    return _round_to_8(width), _round_to_8(height)
+
+
+def get_effective_resolution():
+    if RES_CUSTOM:
+        return int(RES_CUSTOM_WIDTH), int(RES_CUSTOM_HEIGHT)
+    return compute_resolution(RES_ASPECT, RES_MEGAPIXELS)
+
+
+def resolution_state():
+    width, height = get_effective_resolution()
+    return {
+        "aspect": RES_ASPECT,
+        "megapixels": RES_MEGAPIXELS,
+        "custom": RES_CUSTOM,
+        "width": RES_CUSTOM_WIDTH,
+        "height": RES_CUSTOM_HEIGHT,
+        "effective_width": width,
+        "effective_height": height,
+    }
+
+
 async def trigger_run():
     global IS_RUNNING, SKIP_NEXT_CAPTURE
     info = get_active_prompt()
@@ -326,7 +377,8 @@ async def handle_ws(request):
         "custom_text": CUSTOM_TEXT,
         "is_custom": CUSTOM_TEXT is not None,
         "loop_active": LOOP_ACTIVE,
-        "seeds": get_seed_nodes()
+        "seeds": get_seed_nodes(),
+        "resolution": resolution_state()
     })
 
     try:
@@ -529,6 +581,57 @@ async def handle_post_seed(request):
     return web.json_response({"status": "ok", "seeds": seeds})
 
 
+@PromptServer.instance.routes.get("/inx/resolution")
+async def handle_get_resolution(request):
+    return web.json_response(resolution_state())
+
+
+@PromptServer.instance.routes.post("/inx/resolution")
+async def handle_post_resolution(request):
+    global RES_ASPECT, RES_MEGAPIXELS, RES_CUSTOM, RES_CUSTOM_WIDTH, RES_CUSTOM_HEIGHT, RESOLUTION_REVISION
+
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    if data.get("aspect") in ASPECT_RATIOS:
+        RES_ASPECT = data["aspect"]
+
+    if "megapixels" in data:
+        try:
+            RES_MEGAPIXELS = max(0.1, min(8.0, float(data["megapixels"])))
+        except (TypeError, ValueError):
+            pass
+
+    if "custom" in data:
+        RES_CUSTOM = bool(data["custom"])
+
+    if "width" in data:
+        try:
+            RES_CUSTOM_WIDTH = max(16, min(8192, int(data["width"])))
+        except (TypeError, ValueError):
+            pass
+
+    if "height" in data:
+        try:
+            RES_CUSTOM_HEIGHT = max(16, min(8192, int(data["height"])))
+        except (TypeError, ValueError):
+            pass
+
+    RESOLUTION_REVISION += 1
+
+    state = resolution_state()
+    payload = {"type": "resolution_update", **state}
+    for ws in list(CONNECTED_WEBSOCKETS):
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            pass
+
+    return web.json_response(state)
+
+
 @PromptServer.instance.routes.post("/inx/kill_server")
 async def kill_server_endpoint(request):
     global HISTORY_FILES, HISTORY_EPOCH
@@ -662,6 +765,31 @@ class ServeImageLAN:
             asyncio.create_task(schedule_next())
 
         return {"ui": {"images": preview_images}, "result": (images,)}
+
+
+class ServeResolutionLAN:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {}}
+
+    RETURN_TYPES = ("INT", "INT")
+    RETURN_NAMES = ("width", "height")
+    FUNCTION = "serve_resolution"
+    CATEGORY = "inx"
+    DESCRIPTION = "Outputs a width and height configured from the LAN web interface (aspect ratio + megapixels, or custom values)."
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        width, height = get_effective_resolution()
+        return (RESOLUTION_REVISION, width, height)
+
+    def serve_resolution(self):
+        width, height = get_effective_resolution()
+        print(f"\n[Serve Resolution on LAN] Outputting {width} x {height}\n")
+        return (width, height)
 
 
 class ServeTextLAN:
