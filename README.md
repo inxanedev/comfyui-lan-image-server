@@ -21,7 +21,7 @@ A custom node for ComfyUI that streams real-time KSampler step previews and serv
    cd ComfyUI/custom_nodes/
 
 2. Clone this repository:
-   git clone https://github.com/YOUR_GITHUB_USERNAME/comfyui-lan-image-server.git
+   git clone https://github.com/inxanedev/comfyui-lan-image-server.git
 
 3. Restart ComfyUI.
 
