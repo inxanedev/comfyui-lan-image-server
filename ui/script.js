@@ -46,6 +46,16 @@ let zoomTx = 0;
 let zoomTy = 0;
 let gesture = null;
 
+const IMAGE_CACHE_LIMIT = 24;
+const imageCache = new Map();
+let imageEpoch = '';
+let galleryLoadToken = 0;
+let displayedImageKey = null;
+let activeImageKey = null;
+let livePreviewOwned = false;
+let pendingPreview = null;
+let previewRafScheduled = false;
+
 function clampZoom() {
     const rect = viewer.getBoundingClientRect();
     const scaledW = img.offsetWidth * zoomScale;
@@ -73,6 +83,86 @@ function resetZoom() {
     zoomTx = 0;
     zoomTy = 0;
     img.style.transform = '';
+}
+
+function syncEpoch(epoch) {
+    if (epoch && epoch !== imageEpoch) {
+        imageEpoch = epoch;
+        invalidateImageCache();
+        return true;
+    }
+    return false;
+}
+
+function invalidateImageCache() {
+    for (const url of imageCache.values()) {
+        if (typeof url === 'string' && url.startsWith('blob:')) {
+            URL.revokeObjectURL(url);
+        }
+    }
+    imageCache.clear();
+    displayedImageKey = null;
+    activeImageKey = null;
+}
+
+async function loadImageUrl(index) {
+    const key = `${imageEpoch}:${index}`;
+    const cached = imageCache.get(key);
+    if (cached) return cached;
+
+    const resp = await fetch(`/inx/image?index=${index}&v=${encodeURIComponent(imageEpoch)}`);
+    if (!resp.ok) throw new Error(`image ${index} unavailable`);
+
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    imageCache.set(key, url);
+
+    while (imageCache.size > IMAGE_CACHE_LIMIT) {
+        let evictedKey = null;
+        for (const k of imageCache.keys()) {
+            if (k !== activeImageKey) {
+                evictedKey = k;
+                break;
+            }
+        }
+        if (evictedKey === null) break;
+        const evictedUrl = imageCache.get(evictedKey);
+        if (evictedUrl && evictedUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(evictedUrl);
+        }
+        imageCache.delete(evictedKey);
+    }
+    return url;
+}
+
+function prefetchImage(index) {
+    if (index < 0 || index >= totalImages) return;
+    if (imageCache.has(`${imageEpoch}:${index}`)) return;
+    loadImageUrl(index).catch(() => {});
+}
+
+function queuePreviewFrame(buffer, mimeType) {
+    pendingPreview = { buffer: buffer, mime: mimeType };
+    if (!previewRafScheduled) {
+        previewRafScheduled = true;
+        requestAnimationFrame(flushPreviewFrame);
+    }
+}
+
+function flushPreviewFrame() {
+    previewRafScheduled = false;
+    const pending = pendingPreview;
+    pendingPreview = null;
+    if (!pending) return;
+
+    const blob = new Blob([pending.buffer], { type: pending.mime });
+    const newUrl = URL.createObjectURL(blob);
+    if (livePreviewOwned && livePreviewUrl && livePreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(livePreviewUrl);
+    }
+    livePreviewUrl = newUrl;
+    livePreviewOwned = true;
+    if (currentTab === 'live') updateLiveImage();
 }
 
 function initZoomGestures() {
@@ -519,7 +609,7 @@ async function setSeed(id, mode, value) {
     } catch (e) {}
 }
 
-function updateGalleryImage() {
+async function updateGalleryImage() {
     if (totalImages === 0) {
         img.style.display = 'none';
         placeholder.style.display = 'block';
@@ -527,19 +617,40 @@ function updateGalleryImage() {
         counter.textContent = '0 / 0';
         prevBtn.disabled = true;
         nextBtn.disabled = true;
+        displayedImageKey = null;
         return;
     }
 
-    placeholder.style.display = 'none';
-    img.style.display = 'block';
-    img.src = `/inx/image?index=${currentIndex - 1}&t=${new Date().getTime()}`;
     counter.textContent = `${currentIndex} / ${totalImages}`;
-
     prevBtn.disabled = (currentIndex <= 1);
     nextBtn.disabled = (currentIndex >= totalImages);
+
+    const index = currentIndex - 1;
+    const key = `gallery:${imageEpoch}:${index}`;
+    if (key === displayedImageKey) return;
+
+    const token = ++galleryLoadToken;
+    try {
+        const url = await loadImageUrl(index);
+        if (token !== galleryLoadToken) return;
+        placeholder.style.display = 'none';
+        img.style.display = 'block';
+        img.src = url;
+        displayedImageKey = key;
+        activeImageKey = `${imageEpoch}:${index}`;
+        prefetchImage(index - 1);
+        prefetchImage(index + 1);
+    } catch (e) {
+        if (token !== galleryLoadToken) return;
+        img.style.display = 'none';
+        placeholder.style.display = 'block';
+        placeholder.textContent = 'Image unavailable.';
+    }
 }
 
 function updateLiveImage() {
+    displayedImageKey = null;
+    activeImageKey = null;
     if (!livePreviewUrl) {
         img.style.display = 'none';
         placeholder.style.display = 'block';
@@ -574,48 +685,35 @@ function connectWS() {
         if (event.data instanceof ArrayBuffer) {
             const bytes = new Uint8Array(event.data);
 
+            // The image payload is preceded by a small JSON metadata header, so only
+            // the first chunk needs to be scanned for magic bytes.
+            const limit = Math.min(bytes.length, 2048);
             let startOffset = -1;
             let mimeType = 'image/jpeg';
 
-            // Scan for JPEG Magic Bytes (0xFF, 0xD8)
-            for (let i = 0; i < bytes.length - 1; i++) {
+            for (let i = 0; i < limit - 1; i++) {
                 if (bytes[i] === 0xFF && bytes[i + 1] === 0xD8) {
                     startOffset = i;
                     mimeType = 'image/jpeg';
                     break;
                 }
-            }
-
-            // Scan for PNG Magic Bytes (0x89, 'P', 'N', 'G')
-            if (startOffset === -1) {
-                for (let i = 0; i < bytes.length - 3; i++) {
-                    if (bytes[i] === 0x89 && bytes[i + 1] === 0x50 && bytes[i + 2] === 0x4E && bytes[i + 3] === 0x47) {
-                        startOffset = i;
-                        mimeType = 'image/png';
-                        break;
-                    }
+                if (i < limit - 3 && bytes[i] === 0x89 && bytes[i + 1] === 0x50 && bytes[i + 2] === 0x4E && bytes[i + 3] === 0x47) {
+                    startOffset = i;
+                    mimeType = 'image/png';
+                    break;
                 }
             }
 
             if (startOffset !== -1) {
-                const imageBuffer = event.data.slice(startOffset);
-                const blob = new Blob([imageBuffer], { type: mimeType });
-
-                const newUrl = URL.createObjectURL(blob);
-                if (livePreviewUrl && livePreviewUrl.startsWith('blob:')) {
-                    URL.revokeObjectURL(livePreviewUrl);
-                }
-                livePreviewUrl = newUrl;
-
-                if (currentTab === 'live') {
-                    updateLiveImage();
-                }
+                queuePreviewFrame(event.data.slice(startOffset), mimeType);
             }
         } else if (typeof event.data === 'string') {
             try {
                 const data = JSON.parse(event.data);
 
                 if (data.type === 'init' || data.type === 'update') {
+                    syncEpoch(data.epoch);
+
                     const previousTotal = totalImages;
                     const wasAtLatest = (currentIndex === previousTotal) || (previousTotal === 0);
 
@@ -627,13 +725,19 @@ function connectWS() {
 
                     // When the final image is saved by the node, auto-update the Live Preview tab
                     if (totalImages > 0) {
-                        if (livePreviewUrl && livePreviewUrl.startsWith('blob:')) {
-                            URL.revokeObjectURL(livePreviewUrl);
-                        }
-                        livePreviewUrl = `/inx/image?index=${totalImages - 1}&t=${new Date().getTime()}`;
-                        if (currentTab === 'live') {
-                            updateLiveImage();
-                        }
+                        const finalIndex = totalImages - 1;
+                        loadImageUrl(finalIndex).then(url => {
+                            if (totalImages - 1 !== finalIndex) return;
+                            if (livePreviewOwned && livePreviewUrl && livePreviewUrl.startsWith('blob:')) {
+                                URL.revokeObjectURL(livePreviewUrl);
+                            }
+                            livePreviewUrl = url;
+                            livePreviewOwned = false;
+                            activeImageKey = `${imageEpoch}:${finalIndex}`;
+                            if (currentTab === 'live') {
+                                updateLiveImage();
+                            }
+                        }).catch(() => {});
                     }
 
                     if (currentTab === 'gallery') {
@@ -657,12 +761,15 @@ function connectWS() {
                 } else if (data.type === 'workflow_status') {
                     updateWorkflowUI(data);
                 } else if (data.type === 'cleared') {
+                    syncEpoch(data.epoch);
                     totalImages = 0;
                     currentIndex = 0;
-                    if (livePreviewUrl && livePreviewUrl.startsWith('blob:')) {
+                    if (livePreviewOwned && livePreviewUrl && livePreviewUrl.startsWith('blob:')) {
                         URL.revokeObjectURL(livePreviewUrl);
                     }
                     livePreviewUrl = null;
+                    livePreviewOwned = false;
+                    pendingPreview = null;
                     resetZoom();
                     if (currentTab === 'gallery') updateGalleryImage();
                     else updateLiveImage();

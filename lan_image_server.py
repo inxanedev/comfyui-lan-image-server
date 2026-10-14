@@ -17,6 +17,7 @@ UI_DIR = os.path.join(NODE_DIR, "ui")
 # State variables
 CONNECTED_WEBSOCKETS = set()
 HISTORY_FILES = []
+HISTORY_EPOCH = uuid.uuid4().hex
 SERVER_INITIALIZED = False
 DEFAULT_TEXT = ""
 CUSTOM_TEXT = None
@@ -296,7 +297,11 @@ async def handle_image(request):
         idx = int(index_param) if index_param is not None else len(HISTORY_FILES) - 1
         filepath = HISTORY_FILES[idx]
         with open(filepath, "rb") as f:
-            return web.Response(body=f.read(), content_type='image/png')
+            return web.Response(
+                body=f.read(),
+                content_type='image/png',
+                headers={"Cache-Control": "public, max-age=31536000, immutable"}
+            )
     except (IndexError, ValueError, OSError):
         return web.Response(status=404, text="Image not found.")
 
@@ -310,6 +315,7 @@ async def handle_ws(request):
     await ws.send_json({
         "type": "init",
         "total": len(HISTORY_FILES),
+        "epoch": HISTORY_EPOCH,
         "default_text": DEFAULT_TEXT,
         "custom_text": CUSTOM_TEXT,
         "is_custom": CUSTOM_TEXT is not None,
@@ -519,8 +525,8 @@ async def handle_post_seed(request):
 
 @PromptServer.instance.routes.post("/inx/kill_server")
 async def kill_server_endpoint(request):
-    global HISTORY_FILES
-    
+    global HISTORY_FILES, HISTORY_EPOCH
+
     for f in HISTORY_FILES:
         if os.path.exists(f):
             try:
@@ -528,14 +534,15 @@ async def kill_server_endpoint(request):
             except OSError:
                 pass
     HISTORY_FILES = []
+    HISTORY_EPOCH = uuid.uuid4().hex
 
     for ws in list(CONNECTED_WEBSOCKETS):
         try:
-            await ws.send_json({"type": "cleared"})
+            await ws.send_json({"type": "cleared", "epoch": HISTORY_EPOCH})
         except Exception:
             pass
 
-    return web.json_response({"status": "cleared"})
+    return web.json_response({"status": "cleared", "epoch": HISTORY_EPOCH})
 
 # ------------------------------------------------------------------
 # Custom Node Classes
@@ -584,7 +591,8 @@ class ServeImageLAN:
 
         payload = {
             "type": "update",
-            "total": len(HISTORY_FILES)
+            "total": len(HISTORY_FILES),
+            "epoch": HISTORY_EPOCH
         }
         
         for ws in list(CONNECTED_WEBSOCKETS):
