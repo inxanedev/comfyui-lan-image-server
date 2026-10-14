@@ -7,6 +7,7 @@ import os
 import random
 import shutil
 import socket
+import subprocess
 import time
 import uuid
 import numpy as np
@@ -662,6 +663,26 @@ async def handle_post_resolution(request):
             pass
 
     return web.json_response(state)
+
+
+def _do_shutdown():
+    try:
+        if os.name == "nt":
+            subprocess.Popen(["shutdown", "/s", "/t", "0"])
+        else:
+            subprocess.Popen(["shutdown", "-h", "now"])
+    except Exception as e:
+        print(f"[LAN Server] Shutdown failed: {e}")
+
+
+@PromptServer.instance.routes.post("/inx/shutdown")
+async def handle_shutdown(request):
+    # Give the HTTP response a moment to reach the browser before powering off.
+    try:
+        asyncio.get_running_loop().call_later(1.0, _do_shutdown)
+    except Exception:
+        _do_shutdown()
+    return web.json_response({"status": "shutting_down"})
 
 
 @PromptServer.instance.routes.post("/inx/kill_server")

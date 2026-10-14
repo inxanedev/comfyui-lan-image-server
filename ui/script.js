@@ -987,6 +987,19 @@ function killServer() {
     }
 }
 
+async function shutdownPC() {
+    if (!confirm("Shut down the computer running ComfyUI?\n\nThis powers off the PC immediately and cannot be undone from here.")) {
+        return;
+    }
+    const btn = document.getElementById('shutdownBtn');
+    if (btn) btn.disabled = true;
+    status.textContent = 'Shutting down...';
+    status.style.color = '#F44336';
+    try {
+        await fetch('/inx/shutdown', { method: 'POST' });
+    } catch (e) {}
+}
+
 initZoomGestures();
 updateTabIndicator();
 connectWS();
