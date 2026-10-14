@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ComfyUI Live LAN View</title>
+        <link rel="stylesheet" href="/inx/ui/style.css">
+</head>
+<body>
+    <div id="tabs">
+        <button id="tabGallery" class="tab-btn active" onclick="switchTab('gallery')">Gallery</button>
+        <button id="tabLive" class="tab-btn" onclick="switchTab('live')">Live Preview</button>
+        <button id="tabPrompt" class="tab-btn" onclick="switchTab('prompt')">Prompt</button>
+    </div>
+
+    <div id="viewer">
+        <div id="status">Connecting...</div>
+        <img id="display" src="" alt="Served Image" style="display:none;">
+        <div id="placeholder">No images available</div>
+    </div>
+
+    <div id="promptContainer">
+        <div class="prompt-header">
+            <span style="font-weight: 600; font-size: 14px; color: #aaa;">Workflow Text / Prompt</span>
+            <span id="promptBadge" class="badge">Default</span>
+        </div>
+
+        <div id="defaultPromptBox">
+            <div id="defaultPromptTitle">Workflow Default</div>
+            <div id="defaultPromptText"></div>
+        </div>
+
+        <textarea id="promptInput" placeholder="Enter custom prompt text here..."></textarea>
+
+        <div class="prompt-actions">
+            <button id="revertBtn" class="btn" onclick="revertText()" style="flex: 1;" disabled>Revert to default</button>
+            <button id="saveBtn" class="btn btn-save" onclick="saveText()" style="flex: 1;">Save</button>
+        </div>
+        <div id="promptNotice"></div>
+    </div>
+
+    <div id="controls">
+        <div id="galleryBar" class="control-row">
+            <div class="group">
+                <button id="prevBtn" class="btn" onclick="navigate(-1)" disabled>Prev</button>
+                <span id="counter">0 / 0</span>
+                <button id="nextBtn" class="btn" onclick="navigate(1)" disabled>Next</button>
+            </div>
+            <button id="killBtn" class="btn btn-danger" onclick="killServer()">Clear / Kill</button>
+        </div>
+        <div id="workflowBar" class="control-row">
+            <button id="runBtn" class="btn btn-primary" onclick="runOnce()" style="flex: 1;">Run</button>
+            <button id="loopBtn" class="btn btn-loop" onclick="toggleLoop()" style="flex: 1.2;">Run (Instant)</button>
+            <button id="cancelBtn" class="btn btn-danger" onclick="cancelExecution()" style="flex: 1;">Cancel</button>
+        </div>
+    </div>
+    <script src="/inx/ui/script.js"></script>
+</body>
+</html>

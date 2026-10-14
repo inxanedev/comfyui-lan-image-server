@@ -12,6 +12,7 @@ A custom node for ComfyUI that streams real-time KSampler step previews and serv
 - **Instant Generation Cancel**: Abort running KSampler steps and clear pending queues on the fly with the **Cancel** button.
 - **LAN Prompt / Text Customization**: View and edit prompts remotely from any connected device. Save customized prompts on the fly or revert back to the workflow default with a single tap.
 - **Real-Time KSampler Live Preview**: Hooks directly into ComfyUI's core WebSocket stream (`send_bytes` / `send_image`) to parse and display `latent2rgb` preview frames frame-by-frame while sampling.
+- **Pinch-to-Zoom & Pan**: On the **Gallery** and **Live Preview** tabs, pinch with two fingers to zoom in (up to 8x) and drag to pan around the image. Release to snap back to the original fit—handy for inspecting fine details on a phone.
 - **Seamless Live-to-Final Transition**: When a workflow run finishes, the **Live Preview** tab automatically updates from the lossy KSampler preview to the full-resolution, VAE-decoded PNG image.
 - **Session Gallery & Navigation**: Keeps track of all images generated during the current session with interactive `Prev` and `Next` buttons, a live counter (e.g., `1 / 4`), and state-aware auto-advancing (staying at the latest output unless manually navigating history).
 - **Automated Session Cleanup**: Automatically purges temporary image files upon startup for a fresh slate every time ComfyUI launches.
@@ -73,7 +74,8 @@ Once a workflow has been run at least once in ComfyUI, the bottom action bar all
 ## How It Works
 
 ### Backend (`lan_image_server.py`)
-- **Web Routes**: Registers custom AIOHTTP server routes directly onto ComfyUI's native `PromptServer` (`/inx/view`, `/inx/image`, `/inx/ws`, `/inx/text`, `/inx/revert_text`, `/inx/kill_server`).
+- **Web Routes**: Registers custom AIOHTTP server routes directly onto ComfyUI's native `PromptServer` (`/inx/view`, `/inx/image`, `/inx/ws`, `/inx/text`, `/inx/revert_text`, `/inx/kill_server`), plus `/inx/ui/{filename}` which serves the frontend assets.
+- **External Frontend Assets**: The client is split into `ui/index.html`, `ui/style.css`, and `ui/script.js`, served from the `ui/` folder instead of being embedded in the script.
 - **Binary Stream Interception**: Hooks into `PromptServer.instance.send_bytes` to capture KSampler step preview frames as they are generated on the server backend.
 - **Broadcast System**: Relays binary preview frames, session updates, and live prompt changes across custom WebSocket connections (`/inx/ws`) to all active LAN clients simultaneously.
 
