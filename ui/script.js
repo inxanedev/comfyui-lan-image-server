@@ -167,11 +167,34 @@ function initZoomGestures() {
     });
 }
 
+function updateTabIndicator() {
+    const order = ['gallery', 'live', 'prompt'];
+    const index = Math.max(0, order.indexOf(currentTab));
+    const indicator = document.getElementById('tabIndicator');
+    if (indicator) {
+        indicator.style.transform = `translateX(${index * 100}%)`;
+    }
+}
+
+function toggleTheme() {
+    const root = document.documentElement;
+    const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    root.setAttribute('data-theme', next);
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) {
+        themeMeta.setAttribute('content', next === 'light' ? '#e9edf6' : '#05060a');
+    }
+    try {
+        localStorage.setItem('inx-theme', next);
+    } catch (e) {}
+}
+
 function switchTab(tab) {
     currentTab = tab;
     tabGallery.classList.toggle('active', tab === 'gallery');
     tabLive.classList.toggle('active', tab === 'live');
     tabPrompt.classList.toggle('active', tab === 'prompt');
+    updateTabIndicator();
 
     if (tab === 'gallery') {
         viewer.style.display = 'flex';
@@ -664,6 +687,7 @@ function killServer() {
 }
 
 initZoomGestures();
+updateTabIndicator();
 connectWS();
 fetch('/inx/text')
     .then(r => r.json())

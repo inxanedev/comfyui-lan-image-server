@@ -1,27 +1,56 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#05060a">
     <title>ComfyUI Live LAN View</title>
-        <link rel="stylesheet" href="/inx/ui/style.css">
+    <script>
+        (function () {
+            try {
+                if (localStorage.getItem('inx-theme') === 'light') {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                    var m = document.querySelector('meta[name="theme-color"]');
+                    if (m) m.setAttribute('content', '#e9edf6');
+                }
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/inx/ui/style.css">
 </head>
 <body>
-    <div id="tabs">
-        <button id="tabGallery" class="tab-btn active" onclick="switchTab('gallery')">Gallery</button>
-        <button id="tabLive" class="tab-btn" onclick="switchTab('live')">Live Preview</button>
-        <button id="tabPrompt" class="tab-btn" onclick="switchTab('prompt')">Prompt</button>
-    </div>
+    <div id="bg"></div>
 
-    <div id="viewer">
+    <header id="topbar">
+        <div id="tabs" role="tablist">
+            <span id="tabIndicator"></span>
+            <button id="tabGallery" class="tab-btn active" role="tab" onclick="switchTab('gallery')">Gallery</button>
+            <button id="tabLive" class="tab-btn" role="tab" onclick="switchTab('live')">Live</button>
+            <button id="tabPrompt" class="tab-btn" role="tab" onclick="switchTab('prompt')">Prompt</button>
+        </div>
+        <button id="themeToggle" class="icon-btn" onclick="toggleTheme()" aria-label="Toggle light and dark mode">
+            <svg class="ico ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <circle cx="12" cy="12" r="4.4"></circle>
+                <path d="M12 2.4v2.2M12 19.4v2.2M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M2.4 12h2.2M19.4 12h2.2M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"></path>
+            </svg>
+            <svg class="ico ico-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.5 13.4A8.5 8.5 0 1 1 10.6 3.5a7 7 0 0 0 9.9 9.9z"></path>
+            </svg>
+        </button>
+    </header>
+
+    <main id="viewer">
         <div id="status">Connecting...</div>
         <img id="display" src="" alt="Served Image" style="display:none;">
         <div id="placeholder">No images available</div>
-    </div>
+    </main>
 
-    <div id="promptContainer">
+    <section id="promptContainer">
         <div class="prompt-header">
-            <span style="font-weight: 600; font-size: 14px; color: #aaa;">Workflow Text / Prompt</span>
+            <span class="section-title">Workflow Text / Prompt</span>
             <span id="promptBadge" class="badge">Default</span>
         </div>
 
@@ -45,23 +74,24 @@
             </div>
             <div id="seedList" class="seed-list"></div>
         </div>
-    </div>
+    </section>
 
-    <div id="controls">
+    <footer id="controls">
         <div id="galleryBar" class="control-row">
             <div class="group">
                 <button id="prevBtn" class="btn" onclick="navigate(-1)" disabled>Prev</button>
                 <span id="counter">0 / 0</span>
                 <button id="nextBtn" class="btn" onclick="navigate(1)" disabled>Next</button>
             </div>
-            <button id="killBtn" class="btn btn-danger" onclick="killServer()">Clear / Kill</button>
+            <button id="killBtn" class="btn btn-danger" onclick="killServer()">Clear</button>
         </div>
         <div id="workflowBar" class="control-row">
             <button id="runBtn" class="btn btn-primary" onclick="runOnce()" style="flex: 1;">Run</button>
             <button id="loopBtn" class="btn btn-loop" onclick="toggleLoop()" style="flex: 1.2;">Run (Instant)</button>
             <button id="cancelBtn" class="btn btn-danger" onclick="cancelExecution()" style="flex: 1;">Cancel</button>
         </div>
-    </div>
+    </footer>
+
     <script src="/inx/ui/script.js"></script>
 </body>
 </html>
