@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import io
 import json
@@ -80,7 +81,6 @@ if original_send_bytes:
             if isinstance(data, (bytes, bytearray)):
                 for ws in list(CONNECTED_WEBSOCKETS):
                     try:
-                        import asyncio
                         asyncio.create_task(ws.send_bytes(data))
                     except Exception:
                         pass
@@ -120,6 +120,38 @@ if hasattr(PromptServer.instance, 'prompt_queue') and hasattr(PromptServer.insta
         return original_prompt_queue_put(item)
 
     PromptServer.instance.prompt_queue.put = hooked_prompt_queue_put
+
+
+async def _safe_send_json(ws, payload):
+    try:
+        await ws.send_json(payload)
+    except Exception:
+        pass
+
+
+def broadcast_json(payload):
+    """Sends a JSON payload to every connected LAN client, thread-safely.
+
+    Node execution runs on a transient per-prompt event loop (see
+    ``PromptExecutor.execute`` -> ``asyncio.run``), so WebSocket sends must be
+    marshalled back onto the server's main loop.
+    """
+    sockets = list(CONNECTED_WEBSOCKETS)
+    if not sockets:
+        return
+    loop = getattr(PromptServer.instance, "loop", None)
+    if loop is not None and loop.is_running():
+        for ws in sockets:
+            try:
+                asyncio.run_coroutine_threadsafe(_safe_send_json(ws, payload), loop)
+            except Exception:
+                pass
+    else:
+        for ws in sockets:
+            try:
+                asyncio.create_task(_safe_send_json(ws, payload))
+            except Exception:
+                pass
 
 
 def get_active_prompt():
@@ -634,7 +666,8 @@ async def handle_post_resolution(request):
 
 @PromptServer.instance.routes.post("/inx/kill_server")
 async def kill_server_endpoint(request):
-    global HISTORY_FILES, HISTORY_EPOCH
+    global HISTORY_FILES, HISTORY_EPOCH, CUSTOM_TEXT, TEXT_REVISION
+    global RES_ASPECT, RES_MEGAPIXELS, RES_CUSTOM, RES_CUSTOM_WIDTH, RES_CUSTOM_HEIGHT, RESOLUTION_REVISION
 
     for f in HISTORY_FILES:
         if os.path.exists(f):
@@ -645,11 +678,36 @@ async def kill_server_endpoint(request):
     HISTORY_FILES = []
     HISTORY_EPOCH = uuid.uuid4().hex
 
+    # Reset remote overrides so a fresh session never leaks settings into another workflow.
+    CUSTOM_TEXT = None
+    TEXT_REVISION += 1
+    SEED_OVERRIDES.clear()
+    RES_ASPECT = "1:1"
+    RES_MEGAPIXELS = 1.5
+    RES_CUSTOM = False
+    RES_CUSTOM_WIDTH = 1224
+    RES_CUSTOM_HEIGHT = 1224
+    RESOLUTION_REVISION += 1
+
+    payloads = [
+        {"type": "cleared", "epoch": HISTORY_EPOCH},
+        {
+            "type": "text_update",
+            "default_text": DEFAULT_TEXT,
+            "custom_text": None,
+            "effective_text": DEFAULT_TEXT,
+            "is_custom": False
+        },
+        {"type": "seed_update", "seeds": get_seed_nodes()},
+        {"type": "resolution_update", **resolution_state()},
+    ]
+
     for ws in list(CONNECTED_WEBSOCKETS):
-        try:
-            await ws.send_json({"type": "cleared", "epoch": HISTORY_EPOCH})
-        except Exception:
-            pass
+        for payload in payloads:
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                pass
 
     return web.json_response({"status": "cleared", "epoch": HISTORY_EPOCH})
 
@@ -742,27 +800,32 @@ class ServeImageLAN:
             "epoch": HISTORY_EPOCH
         }
 
-        for ws in list(CONNECTED_WEBSOCKETS):
-            try:
-                await ws.send_json(payload)
-            except Exception:
-                pass
+        broadcast_json(payload)
 
         if LOOP_ACTIVE:
-            import asyncio
             async def schedule_next():
                 await asyncio.sleep(0.5)
                 if LOOP_ACTIVE:
                     success, msg = await trigger_run()
                     if not success:
                         print(f"\n[Serve Image on LAN] Loop stopped: {msg}\n")
-                        err_payload = {"type": "workflow_status", "status": "error", "loop_active": False, "message": msg}
-                        for ws in list(CONNECTED_WEBSOCKETS):
-                            try:
-                                await ws.send_json(err_payload)
-                            except Exception:
-                                pass
-            asyncio.create_task(schedule_next())
+                        broadcast_json({
+                            "type": "workflow_status",
+                            "status": "error",
+                            "loop_active": False,
+                            "message": msg
+                        })
+
+            # The next run must be queued on the server's main loop; this code runs
+            # on the transient per-prompt loop which is torn down when the prompt ends.
+            loop = getattr(PromptServer.instance, "loop", None)
+            if loop is not None and loop.is_running():
+                try:
+                    asyncio.run_coroutine_threadsafe(schedule_next(), loop)
+                except Exception:
+                    asyncio.create_task(schedule_next())
+            else:
+                asyncio.create_task(schedule_next())
 
         return {"ui": {"images": preview_images}, "result": (images,)}
 
@@ -842,10 +905,6 @@ class ServeTextLAN:
             "is_custom": is_custom
         }
 
-        for ws in list(CONNECTED_WEBSOCKETS):
-            try:
-                await ws.send_json(payload)
-            except Exception:
-                pass
+        broadcast_json(payload)
 
         return (effective_text,)
