@@ -808,6 +808,7 @@ class ServeTextLAN:
     RETURN_NAMES = ("text",)
     FUNCTION = "serve_text"
     CATEGORY = "inx"
+    DESCRIPTION = "Outputs text that can be edited from the LAN web interface. Connect it to a CLIPTextEncode (or any text input) to change prompts remotely."
 
     @classmethod
     def IS_CHANGED(cls, default_text="", **kwargs):
