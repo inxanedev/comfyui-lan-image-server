@@ -6,7 +6,8 @@ A custom node for ComfyUI that streams real-time KSampler step previews and serv
 
 ## Features
 
-- **Dual-Tab Mobile Interface**: Designed with a responsive layout that fits mobile viewports (iOS & Android) perfectly without image clipping or horizontal scrolling.
+- **Three-Tab Mobile Interface**: Designed with a responsive layout that fits mobile viewports (iOS & Android) perfectly with **Gallery**, **Live Preview**, and **Prompt** tabs.
+- **LAN Prompt / Text Customization**: View and edit prompts remotely from any connected device. Save customized prompts on the fly or revert back to the workflow default with a single tap.
 - **Real-Time KSampler Live Preview**: Hooks directly into ComfyUI's core WebSocket stream (`send_bytes` / `send_image`) to parse and display `latent2rgb` preview frames frame-by-frame while sampling.
 - **Seamless Live-to-Final Transition**: When a workflow run finishes, the **Live Preview** tab automatically updates from the lossy KSampler preview to the full-resolution, VAE-decoded PNG image.
 - **Session Gallery & Navigation**: Keeps track of all images generated during the current session with interactive `Prev` and `Next` buttons, a live counter (e.g., `1 / 4`), and state-aware auto-advancing (staying at the latest output unless manually navigating history).
@@ -40,25 +41,35 @@ python main.py --listen 0.0.0.0 --port 8000 --preview-method latent2rgb
 
 ## Usage Guide
 
-1. Open your workflow in ComfyUI.
-2. Double-click the canvas, search under the **`inx`** category, and add the **`Serve Image on LAN`** node.
-3. Connect any image output (e.g., from a VAE Decode node) to the **`Serve Image on LAN`** node's `images` input.
-4. Run the workflow. Your terminal console will print the local network address:
+### 1. Remote Prompt Customization (`Serve Text on LAN`)
+1. Double-click the ComfyUI canvas, search under the **`inx`** category, and add **`Serve Text on LAN`**.
+2. Type your default prompt into `default_text` (or connect an existing string).
+3. Connect the `text` output pin to `CLIPTextEncode` (or any node accepting text).
+4. On your mobile or LAN browser (`/inx/view`), click the **Prompt** tab:
+   - View the current workflow default.
+   - Edit the multiline textbox and click **Save** to override with your custom prompt.
+   - Click **Revert to default** at any time to clear the custom prompt and restore the workflow default.
+
+### 2. Live Preview & Image Gallery (`Serve Image on LAN`)
+1. Add the **`Serve Image on LAN`** node (under **`inx`** category).
+2. Connect any image output (e.g., from a VAE Decode node) to the **`Serve Image on LAN`** node's `images` input.
+3. Run the workflow. Your terminal console will print the local network address:
    [Serve Image on LAN] Image added to history (1)
    -> Access: http://192.168.x.x:8000/inx/view
 
-5. Open `http://<your-pc-ip>:8000/inx/view` in any desktop or mobile browser connected to the same Wi-Fi network.
+4. Open `http://<your-pc-ip>:8000/inx/view` in any desktop or mobile browser connected to the same Wi-Fi network.
 
 ---
 
 ## How It Works
 
 ### Backend (`lan_image_server.py`)
-- **Web Routes**: Registers custom AIOHTTP server routes directly onto ComfyUI's native `PromptServer` (`/inx/view`, `/inx/image`, `/inx/ws`, `/inx/kill_server`).
+- **Web Routes**: Registers custom AIOHTTP server routes directly onto ComfyUI's native `PromptServer` (`/inx/view`, `/inx/image`, `/inx/ws`, `/inx/text`, `/inx/revert_text`, `/inx/kill_server`).
 - **Binary Stream Interception**: Hooks into `PromptServer.instance.send_bytes` to capture KSampler step preview frames as they are generated on the server backend.
-- **Broadcast System**: Relays binary preview frames and JSON session updates across custom WebSocket connections (`/inx/ws`) to all active LAN clients simultaneously.
+- **Broadcast System**: Relays binary preview frames, session updates, and live prompt changes across custom WebSocket connections (`/inx/ws`) to all active LAN clients simultaneously.
 
 ### Frontend Client (`/inx/view`)
+- **Interactive Tabs**: Seamlessly toggle between **Gallery**, **Live Preview**, and **Prompt** editor.
 - **Magic Byte Scanning**: Intercepts incoming WebSocket binary ArrayBuffers and scans for standard **JPEG (`0xFF, 0xD8`)** or **PNG (`0x89, 'P', 'N', 'G'`)** magic header bytes. This dynamically strips out ComfyUI's internal JSON metadata prefixes, ensuring raw, valid image blobs are constructed reliably across mobile browsers.
 - **Memory Management**: Uses `URL.createObjectURL()` for instant image rendering and automatically calls `URL.revokeObjectURL()` to prevent client-side browser memory leaks during extended generation sessions.
 

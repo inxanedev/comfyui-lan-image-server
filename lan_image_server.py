@@ -13,6 +13,9 @@ TEMP_DIR = os.path.join(NODE_DIR, "temp")
 CONNECTED_WEBSOCKETS = set()
 HISTORY_FILES = []
 SERVER_INITIALIZED = False
+DEFAULT_TEXT = ""
+CUSTOM_TEXT = None
+TEXT_REVISION = 0
 
 def ensure_clean_temp_dir():
     """Clears the temp directory when the server starts for the first time."""
@@ -160,18 +163,131 @@ async def handle_index(request):
                 font-size: 14px;
                 text-align: center;
             }
+            #promptContainer {
+                flex: 1;
+                display: none;
+                flex-direction: column;
+                padding: 16px;
+                gap: 12px;
+                overflow: hidden;
+                box-sizing: border-box;
+            }
+            .prompt-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 8px;
+            }
+            .badge {
+                font-size: 11px;
+                padding: 3px 8px;
+                border-radius: 12px;
+                font-weight: 600;
+                letter-spacing: 0.3px;
+                background: rgba(255, 255, 255, 0.08);
+                color: #aaa;
+                transition: all 0.2s ease;
+            }
+            .badge-custom {
+                background: rgba(76, 175, 80, 0.2);
+                color: #4CAF50;
+                border: 1px solid rgba(76, 175, 80, 0.4);
+            }
+            #defaultPromptBox {
+                display: none;
+                background: #141418;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 8px;
+                padding: 10px 12px;
+                font-size: 12px;
+                color: #999;
+                box-sizing: border-box;
+            }
+            #defaultPromptTitle {
+                font-weight: 600;
+                margin-bottom: 4px;
+                color: #aaa;
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            #defaultPromptText {
+                white-space: pre-wrap;
+                word-break: break-word;
+                max-height: 60px;
+                overflow-y: auto;
+                color: #bbb;
+            }
+            #promptInput {
+                flex: 1;
+                width: 100%;
+                background: #141418;
+                color: #fff;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 8px;
+                padding: 12px;
+                font-family: inherit;
+                font-size: 15px;
+                line-height: 1.5;
+                resize: none;
+                outline: none;
+                box-sizing: border-box;
+                transition: border-color 0.2s ease;
+            }
+            #promptInput:focus {
+                border-color: #4CAF50;
+            }
+            .prompt-actions {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+            }
+            .btn-save {
+                background: #2e7d32;
+                border-color: #388e3c;
+            }
+            .btn-save:active {
+                background: #388e3c;
+            }
+            #promptNotice {
+                font-size: 12px;
+                text-align: center;
+                min-height: 16px;
+                color: #888;
+            }
         </style>
     </head>
     <body>
         <div id="tabs">
             <button id="tabGallery" class="tab-btn active" onclick="switchTab('gallery')">Gallery</button>
             <button id="tabLive" class="tab-btn" onclick="switchTab('live')">Live Preview</button>
+            <button id="tabPrompt" class="tab-btn" onclick="switchTab('prompt')">Prompt</button>
         </div>
 
         <div id="viewer">
             <div id="status">Connecting...</div>
             <img id="display" src="" alt="Served Image" style="display:none;">
             <div id="placeholder">No images available</div>
+        </div>
+
+        <div id="promptContainer">
+            <div class="prompt-header">
+                <span style="font-weight: 600; font-size: 14px; color: #aaa;">Workflow Text / Prompt</span>
+                <span id="promptBadge" class="badge">Default</span>
+            </div>
+
+            <div id="defaultPromptBox">
+                <div id="defaultPromptTitle">Workflow Default</div>
+                <div id="defaultPromptText"></div>
+            </div>
+
+            <textarea id="promptInput" placeholder="Enter custom prompt text here..."></textarea>
+
+            <div class="prompt-actions">
+                <button id="revertBtn" class="btn" onclick="revertText()" style="flex: 1;" disabled>Revert to default</button>
+                <button id="saveBtn" class="btn btn-save" onclick="saveText()" style="flex: 1;">Save</button>
+            </div>
+            <div id="promptNotice"></div>
         </div>
 
         <div id="controls">
@@ -184,6 +300,7 @@ async def handle_index(request):
         </div>
 
         <script>
+            const viewer = document.getElementById('viewer');
             const img = document.getElementById('display');
             const placeholder = document.getElementById('placeholder');
             const status = document.getElementById('status');
@@ -192,25 +309,124 @@ async def handle_index(request):
             const counter = document.getElementById('counter');
             const tabGallery = document.getElementById('tabGallery');
             const tabLive = document.getElementById('tabLive');
+            const tabPrompt = document.getElementById('tabPrompt');
             const controls = document.getElementById('controls');
+
+            const promptContainer = document.getElementById('promptContainer');
+            const promptInput = document.getElementById('promptInput');
+            const defaultPromptBox = document.getElementById('defaultPromptBox');
+            const defaultPromptText = document.getElementById('defaultPromptText');
+            const promptBadge = document.getElementById('promptBadge');
+            const revertBtn = document.getElementById('revertBtn');
+            const saveBtn = document.getElementById('saveBtn');
+            const promptNotice = document.getElementById('promptNotice');
 
             let currentTab = 'gallery';
             let totalImages = 0;
             let currentIndex = 0;
             let livePreviewUrl = null;
 
+            let defaultText = '';
+            let customText = null;
+            let isCustom = false;
+
             function switchTab(tab) {
                 currentTab = tab;
+                tabGallery.classList.toggle('active', tab === 'gallery');
+                tabLive.classList.toggle('active', tab === 'live');
+                tabPrompt.classList.toggle('active', tab === 'prompt');
+
                 if (tab === 'gallery') {
-                    tabGallery.classList.add('active');
-                    tabLive.classList.remove('active');
+                    viewer.style.display = 'flex';
+                    promptContainer.style.display = 'none';
                     controls.style.display = 'flex';
                     updateGalleryImage();
-                } else {
-                    tabLive.classList.add('active');
-                    tabGallery.classList.remove('active');
+                } else if (tab === 'live') {
+                    viewer.style.display = 'flex';
+                    promptContainer.style.display = 'none';
                     controls.style.display = 'none';
                     updateLiveImage();
+                } else if (tab === 'prompt') {
+                    viewer.style.display = 'none';
+                    controls.style.display = 'none';
+                    promptContainer.style.display = 'flex';
+                }
+            }
+
+            function updatePromptUI(data) {
+                if (data.default_text !== undefined) defaultText = data.default_text || '';
+                if (data.custom_text !== undefined) customText = data.custom_text;
+                isCustom = (customText !== null && customText !== undefined);
+
+                defaultPromptText.textContent = defaultText;
+
+                if (isCustom) {
+                    promptBadge.textContent = 'Customized';
+                    promptBadge.classList.add('badge-custom');
+                    defaultPromptBox.style.display = defaultText ? 'block' : 'none';
+                    revertBtn.disabled = false;
+                } else {
+                    promptBadge.textContent = 'Default';
+                    promptBadge.classList.remove('badge-custom');
+                    defaultPromptBox.style.display = 'none';
+                    revertBtn.disabled = true;
+                }
+
+                if (document.activeElement !== promptInput) {
+                    promptInput.value = isCustom ? customText : defaultText;
+                }
+            }
+
+            async function saveText() {
+                const text = promptInput.value;
+                saveBtn.disabled = true;
+                promptNotice.textContent = 'Saving...';
+                promptNotice.style.color = '#aaa';
+
+                try {
+                    const resp = await fetch('/inx/text', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: text })
+                    });
+                    if (!resp.ok) throw new Error('Save failed');
+                    customText = text;
+                    isCustom = true;
+                    updatePromptUI({ default_text: defaultText, custom_text: customText });
+                    promptNotice.textContent = 'Saved! ComfyUI will use this text.';
+                    promptNotice.style.color = '#4CAF50';
+                    setTimeout(() => {
+                        if (promptNotice.textContent.startsWith('Saved')) promptNotice.textContent = '';
+                    }, 3000);
+                } catch (e) {
+                    promptNotice.textContent = 'Error saving text.';
+                    promptNotice.style.color = '#F44336';
+                } finally {
+                    saveBtn.disabled = false;
+                }
+            }
+
+            async function revertText() {
+                revertBtn.disabled = true;
+                promptNotice.textContent = 'Reverting...';
+                promptNotice.style.color = '#aaa';
+
+                try {
+                    const resp = await fetch('/inx/revert_text', { method: 'POST' });
+                    if (!resp.ok) throw new Error('Revert failed');
+                    customText = null;
+                    isCustom = false;
+                    promptInput.value = defaultText;
+                    updatePromptUI({ default_text: defaultText, custom_text: null });
+                    promptNotice.textContent = 'Reverted to workflow default.';
+                    promptNotice.style.color = '#4CAF50';
+                    setTimeout(() => {
+                        if (promptNotice.textContent.startsWith('Reverted')) promptNotice.textContent = '';
+                    }, 3000);
+                } catch (e) {
+                    promptNotice.textContent = 'Error reverting text.';
+                    promptNotice.style.color = '#F44336';
+                    revertBtn.disabled = false;
                 }
             }
 
@@ -334,6 +550,12 @@ async def handle_index(request):
                                 if (currentTab === 'gallery') {
                                     updateGalleryImage();
                                 }
+
+                                if (data.type === 'init') {
+                                    updatePromptUI(data);
+                                }
+                            } else if (data.type === 'text_update') {
+                                updatePromptUI(data);
                             } else if (data.type === 'cleared') {
                                 totalImages = 0;
                                 currentIndex = 0;
@@ -364,6 +586,10 @@ async def handle_index(request):
             }
 
             connectWS();
+            fetch('/inx/text')
+                .then(r => r.json())
+                .then(data => updatePromptUI(data))
+                .catch(() => {});
         </script>
     </body>
     </html>
@@ -395,7 +621,10 @@ async def handle_ws(request):
 
     await ws.send_json({
         "type": "init",
-        "total": len(HISTORY_FILES)
+        "total": len(HISTORY_FILES),
+        "default_text": DEFAULT_TEXT,
+        "custom_text": CUSTOM_TEXT,
+        "is_custom": CUSTOM_TEXT is not None
     })
 
     try:
@@ -404,6 +633,67 @@ async def handle_ws(request):
     finally:
         CONNECTED_WEBSOCKETS.remove(ws)
     return ws
+
+
+@PromptServer.instance.routes.get("/inx/text")
+async def handle_get_text(request):
+    return web.json_response({
+        "default_text": DEFAULT_TEXT,
+        "custom_text": CUSTOM_TEXT,
+        "effective_text": CUSTOM_TEXT if CUSTOM_TEXT is not None else DEFAULT_TEXT,
+        "is_custom": CUSTOM_TEXT is not None
+    })
+
+
+@PromptServer.instance.routes.post("/inx/text")
+async def handle_post_text(request):
+    global CUSTOM_TEXT, TEXT_REVISION
+    try:
+        data = await request.json()
+        text = data.get("text", "")
+        CUSTOM_TEXT = str(text)
+        TEXT_REVISION += 1
+
+        payload = {
+            "type": "text_update",
+            "default_text": DEFAULT_TEXT,
+            "custom_text": CUSTOM_TEXT,
+            "effective_text": CUSTOM_TEXT,
+            "is_custom": True
+        }
+
+        for ws in list(CONNECTED_WEBSOCKETS):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                pass
+
+        return web.json_response({"status": "saved", "is_custom": True})
+    except Exception as e:
+        return web.json_response({"status": "error", "message": str(e)}, status=400)
+
+
+@PromptServer.instance.routes.post("/inx/revert_text")
+async def handle_revert_text(request):
+    global CUSTOM_TEXT, TEXT_REVISION
+    CUSTOM_TEXT = None
+    TEXT_REVISION += 1
+
+    payload = {
+        "type": "text_update",
+        "default_text": DEFAULT_TEXT,
+        "custom_text": None,
+        "effective_text": DEFAULT_TEXT,
+        "is_custom": False
+    }
+
+    for ws in list(CONNECTED_WEBSOCKETS):
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            pass
+
+    return web.json_response({"status": "reverted", "is_custom": False})
 
 
 @PromptServer.instance.routes.post("/inx/kill_server")
@@ -427,7 +717,7 @@ async def kill_server_endpoint(request):
     return web.json_response({"status": "cleared"})
 
 # ------------------------------------------------------------------
-# Custom Node Class
+# Custom Node Classes
 # ------------------------------------------------------------------
 
 class ServeImageLAN:
@@ -483,3 +773,61 @@ class ServeImageLAN:
                 pass
 
         return ()
+
+
+class ServeTextLAN:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "default_text": ("STRING", {"default": "", "multiline": True}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "serve_text"
+    CATEGORY = "inx"
+
+    @classmethod
+    def IS_CHANGED(cls, default_text="", **kwargs):
+        global TEXT_REVISION
+        return (str(default_text), str(CUSTOM_TEXT), TEXT_REVISION)
+
+    async def serve_text(self, default_text=""):
+        global DEFAULT_TEXT, CUSTOM_TEXT, TEXT_REVISION
+
+        if isinstance(default_text, list):
+            default_text = default_text[0] if default_text else ""
+        elif default_text is None:
+            default_text = ""
+
+        if DEFAULT_TEXT != default_text:
+            DEFAULT_TEXT = default_text
+            TEXT_REVISION += 1
+
+        is_custom = (CUSTOM_TEXT is not None)
+        effective_text = CUSTOM_TEXT if is_custom else DEFAULT_TEXT
+
+        preview_snippet = effective_text[:60] + ('...' if len(effective_text) > 60 else '')
+        print(f"\n[Serve Text on LAN] Outputting {'customized' if is_custom else 'default'} text:")
+        print(f" -> Text: \"{preview_snippet}\"\n")
+
+        payload = {
+            "type": "text_update",
+            "default_text": DEFAULT_TEXT,
+            "custom_text": CUSTOM_TEXT,
+            "effective_text": effective_text,
+            "is_custom": is_custom
+        }
+
+        for ws in list(CONNECTED_WEBSOCKETS):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                pass
+
+        return (effective_text,)
