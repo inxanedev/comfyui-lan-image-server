@@ -1,4 +1,4 @@
-# ComfyUI LAN Image Server & Live Viewer (`inx`)
+# ComfyUI LAN Image Server & Live Viewer
 
 A custom node for ComfyUI that streams real-time KSampler step previews and serves full-resolution image history across your local area network (LAN) to any browser or mobile device.
 
