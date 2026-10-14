@@ -142,6 +142,8 @@ Any change you make in **Settings** is applied to the very next run automaticall
 - **Seed control is opt-in.** The Seed section only shows up when you use the [`Seed (rgthree)`](https://github.com/rgthree/rgthree-comfy) node. Other seed inputs are left untouched.
 - **Run the workflow once from ComfyUI first** so the panel can capture it for remote runs.
 - **Session images live in `temp/`** and are purged on startup, so every launch starts clean.
+- **The `Clear` button resets your remote settings too.** Along with the image gallery, it clears the custom prompt, seed overrides, and resolution back to their defaults so a fresh session can't leak settings into another workflow.
+- **No authentication.** Every `/inx/*` endpoint is open to anyone who can reach the address — they can run, cancel, clear, and change settings. Keep it on a trusted LAN and **do not expose it to the internet** (no port forwarding, no public tunnels).
 
 ---
 
