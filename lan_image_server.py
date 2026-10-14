@@ -1,6 +1,9 @@
+import copy
 import os
 import shutil
 import socket
+import time
+import uuid
 from PIL import Image
 from aiohttp import web
 from server import PromptServer
@@ -16,6 +19,10 @@ SERVER_INITIALIZED = False
 DEFAULT_TEXT = ""
 CUSTOM_TEXT = None
 TEXT_REVISION = 0
+
+LAST_PROMPT_INFO = None
+LOOP_ACTIVE = False
+IS_RUNNING = False
 
 def ensure_clean_temp_dir():
     """Clears the temp directory when the server starts for the first time."""
@@ -49,6 +56,129 @@ if original_send_bytes:
     PromptServer.instance.send_bytes = hooked_send_bytes.__get__(
         PromptServer.instance, PromptServer
     )
+
+# ------------------------------------------------------------------
+# Hook into PromptServer prompt_queue to capture active workflow
+# ------------------------------------------------------------------
+
+if hasattr(PromptServer.instance, 'prompt_queue') and hasattr(PromptServer.instance.prompt_queue, 'put'):
+    original_prompt_queue_put = PromptServer.instance.prompt_queue.put
+
+    def hooked_prompt_queue_put(item):
+        global LAST_PROMPT_INFO
+        try:
+            if isinstance(item, (tuple, list)) and len(item) >= 3:
+                prompt = item[2]
+                extra_data = item[3] if len(item) > 3 else {}
+                outputs = item[4] if len(item) > 4 else None
+                sensitive = item[5] if len(item) > 5 else {}
+                LAST_PROMPT_INFO = {
+                    "prompt": copy.deepcopy(prompt),
+                    "extra_data": copy.deepcopy(extra_data) if isinstance(extra_data, dict) else {},
+                    "outputs_to_execute": copy.deepcopy(outputs) if outputs else None,
+                    "sensitive": copy.deepcopy(sensitive) if isinstance(sensitive, dict) else {}
+                }
+        except Exception as e:
+            print(f"[LAN Server] Error capturing prompt: {e}")
+        return original_prompt_queue_put(item)
+
+    PromptServer.instance.prompt_queue.put = hooked_prompt_queue_put
+
+
+def get_active_prompt():
+    global LAST_PROMPT_INFO
+    if LAST_PROMPT_INFO is not None:
+        return LAST_PROMPT_INFO
+
+    try:
+        history = PromptServer.instance.prompt_queue.get_history(max_items=1)
+        if history:
+            for pid, data in history.items():
+                prompt_item = data.get("prompt")
+                if prompt_item and len(prompt_item) >= 3:
+                    LAST_PROMPT_INFO = {
+                        "prompt": copy.deepcopy(prompt_item[2]),
+                        "extra_data": copy.deepcopy(prompt_item[3]) if len(prompt_item) > 3 and isinstance(prompt_item[3], dict) else {},
+                        "outputs_to_execute": copy.deepcopy(prompt_item[4]) if len(prompt_item) > 4 else None,
+                        "sensitive": copy.deepcopy(prompt_item[5]) if len(prompt_item) > 5 and isinstance(prompt_item[5], dict) else {}
+                    }
+                    return LAST_PROMPT_INFO
+    except Exception:
+        pass
+
+    try:
+        running, queued = PromptServer.instance.prompt_queue.get_current_queue_volatile()
+        for item in (running + queued):
+            if len(item) >= 3:
+                LAST_PROMPT_INFO = {
+                    "prompt": copy.deepcopy(item[2]),
+                    "extra_data": copy.deepcopy(item[3]) if len(item) > 3 and isinstance(item[3], dict) else {},
+                    "outputs_to_execute": copy.deepcopy(item[4]) if len(item) > 4 else None,
+                    "sensitive": copy.deepcopy(item[5]) if len(item) > 5 and isinstance(item[5], dict) else {}
+                }
+                return LAST_PROMPT_INFO
+    except Exception:
+        pass
+
+    return None
+
+
+async def trigger_run():
+    global IS_RUNNING
+    info = get_active_prompt()
+    if not info:
+        return False, "No active workflow prompt found. Run the workflow once from ComfyUI first."
+
+    prompt = copy.deepcopy(info["prompt"])
+    extra_data = copy.deepcopy(info.get("extra_data", {}))
+    sensitive = copy.deepcopy(info.get("sensitive", {}))
+
+    prompt_id = str(uuid.uuid4())
+    number = PromptServer.instance.number
+    PromptServer.instance.number += 1
+    extra_data["create_time"] = int(time.time() * 1000)
+
+    IS_RUNNING = True
+
+    try:
+        if hasattr(PromptServer.instance, 'node_replace_manager'):
+            try:
+                PromptServer.instance.node_replace_manager.apply_replacements(prompt)
+            except Exception:
+                pass
+
+        import execution
+        valid = await execution.validate_prompt(prompt_id, prompt, None)
+        if valid[0]:
+            outputs_to_execute = valid[2]
+            if hasattr(execution, 'SENSITIVE_EXTRA_DATA_KEYS'):
+                for k in execution.SENSITIVE_EXTRA_DATA_KEYS:
+                    if k in extra_data:
+                        sensitive[k] = extra_data.pop(k)
+
+            # ComfyUI main.py prompt_worker strictly requires item[5] to be the sensitive dict
+            item = (number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive)
+            PromptServer.instance.prompt_queue.put(item)
+            return True, prompt_id
+        else:
+            IS_RUNNING = False
+            error_details = valid[1]
+            if isinstance(error_details, dict):
+                error_msg = error_details.get("message", str(error_details))
+            else:
+                error_msg = str(error_details)
+            print(f"[LAN Server] Validation failed: {error_msg}")
+            return False, f"Prompt validation failed: {error_msg}"
+    except Exception as e:
+        print(f"[LAN Server] trigger_run error: {e}")
+        try:
+            outputs_to_execute = info.get("outputs_to_execute") or []
+            item = (number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive)
+            PromptServer.instance.prompt_queue.put(item)
+            return True, prompt_id
+        except Exception as inner_e:
+            IS_RUNNING = False
+            return False, f"Queue error: {inner_e}"
 
 # ------------------------------------------------------------------
 # Web Server Routes
@@ -115,12 +245,41 @@ async def handle_index(request):
                 background: rgba(18, 18, 20, 0.95);
                 backdrop-filter: blur(10px);
                 border-top: 1px solid rgba(255, 255, 255, 0.1);
-                padding: 12px 16px;
+                padding: 10px 16px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                z-index: 10;
+            }
+            .control-row {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
                 gap: 8px;
-                z-index: 10;
+                width: 100%;
+            }
+            .btn-primary {
+                background: #1e40af;
+                border-color: #2563eb;
+            }
+            .btn-primary:active {
+                background: #2563eb;
+            }
+            .btn-loop {
+                background: #6b21a8;
+                border-color: #7c3aed;
+            }
+            .btn-loop:active {
+                background: #7c3aed;
+            }
+            .btn-loop.active {
+                background: #b45309;
+                border-color: #f59e0b;
+                animation: loop-pulse 1.4s infinite alternate;
+            }
+            @keyframes loop-pulse {
+                from { box-shadow: 0 0 4px rgba(245, 158, 11, 0.4); }
+                to { box-shadow: 0 0 12px rgba(245, 158, 11, 0.9); }
             }
             .btn {
                 background: #2a2a30;
@@ -291,12 +450,19 @@ async def handle_index(request):
         </div>
 
         <div id="controls">
-            <div class="group">
-                <button id="prevBtn" class="btn" onclick="navigate(-1)" disabled>Prev</button>
-                <span id="counter">0 / 0</span>
-                <button id="nextBtn" class="btn" onclick="navigate(1)" disabled>Next</button>
+            <div id="galleryBar" class="control-row">
+                <div class="group">
+                    <button id="prevBtn" class="btn" onclick="navigate(-1)" disabled>Prev</button>
+                    <span id="counter">0 / 0</span>
+                    <button id="nextBtn" class="btn" onclick="navigate(1)" disabled>Next</button>
+                </div>
+                <button id="killBtn" class="btn btn-danger" onclick="killServer()">Clear / Kill</button>
             </div>
-            <button id="killBtn" class="btn btn-danger" onclick="killServer()">Clear / Kill</button>
+            <div id="workflowBar" class="control-row">
+                <button id="runBtn" class="btn btn-primary" onclick="runOnce()" style="flex: 1;">Run</button>
+                <button id="loopBtn" class="btn btn-loop" onclick="toggleLoop()" style="flex: 1.2;">Run (Instant)</button>
+                <button id="cancelBtn" class="btn btn-danger" onclick="cancelExecution()" style="flex: 1;">Cancel</button>
+            </div>
         </div>
 
         <script>
@@ -321,6 +487,12 @@ async def handle_index(request):
             const saveBtn = document.getElementById('saveBtn');
             const promptNotice = document.getElementById('promptNotice');
 
+            const runBtn = document.getElementById('runBtn');
+            const loopBtn = document.getElementById('loopBtn');
+            const cancelBtn = document.getElementById('cancelBtn');
+            const galleryBar = document.getElementById('galleryBar');
+            const workflowBar = document.getElementById('workflowBar');
+
             let currentTab = 'gallery';
             let totalImages = 0;
             let currentIndex = 0;
@@ -329,6 +501,7 @@ async def handle_index(request):
             let defaultText = '';
             let customText = null;
             let isCustom = false;
+            let loopActive = false;
 
             function switchTab(tab) {
                 currentTab = tab;
@@ -339,17 +512,132 @@ async def handle_index(request):
                 if (tab === 'gallery') {
                     viewer.style.display = 'flex';
                     promptContainer.style.display = 'none';
-                    controls.style.display = 'flex';
+                    galleryBar.style.display = 'flex';
                     updateGalleryImage();
                 } else if (tab === 'live') {
                     viewer.style.display = 'flex';
                     promptContainer.style.display = 'none';
-                    controls.style.display = 'none';
+                    galleryBar.style.display = 'none';
                     updateLiveImage();
                 } else if (tab === 'prompt') {
                     viewer.style.display = 'none';
-                    controls.style.display = 'none';
                     promptContainer.style.display = 'flex';
+                    galleryBar.style.display = 'none';
+                }
+            }
+
+            function updateWorkflowUI(data) {
+                if (data.loop_active !== undefined) {
+                    loopActive = !!data.loop_active;
+                    if (loopActive) {
+                        loopBtn.textContent = 'Stop Loop';
+                        loopBtn.classList.add('active');
+                        status.textContent = 'Looping (Instant)...';
+                        status.style.color = '#FFA000';
+                    } else {
+                        loopBtn.textContent = 'Run (Instant)';
+                        loopBtn.classList.remove('active');
+                        if (status.textContent.includes('Looping')) {
+                            status.textContent = 'Ready';
+                            status.style.color = '#4CAF50';
+                        }
+                    }
+                }
+            }
+
+            async function runOnce() {
+                if (currentTab === 'prompt' && promptInput) {
+                    await saveText();
+                }
+                runBtn.disabled = true;
+                status.textContent = 'Queuing run...';
+                status.style.color = '#2196F3';
+
+                try {
+                    const resp = await fetch('/inx/run', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ loop: false })
+                    });
+                    const res = await resp.json();
+                    if (!resp.ok) {
+                        alert(res.message || 'Error triggering run.');
+                        status.textContent = 'Error';
+                        status.style.color = '#F44336';
+                    } else {
+                        status.textContent = 'Generating...';
+                        status.style.color = '#2196F3';
+                    }
+                } catch (e) {
+                    alert('Network error triggering run.');
+                    status.textContent = 'Network error';
+                    status.style.color = '#F44336';
+                } finally {
+                    setTimeout(() => { runBtn.disabled = false; }, 800);
+                }
+            }
+
+            async function toggleLoop() {
+                if (loopActive) {
+                    loopBtn.disabled = true;
+                    try {
+                        await fetch('/inx/stop_loop', { method: 'POST' });
+                        updateWorkflowUI({ loop_active: false });
+                    } catch (e) {
+                    } finally {
+                        loopBtn.disabled = false;
+                    }
+                } else {
+                    if (currentTab === 'prompt' && promptInput) {
+                        await saveText();
+                    }
+                    loopBtn.disabled = true;
+                    status.textContent = 'Starting loop...';
+                    status.style.color = '#FFA000';
+
+                    try {
+                        const resp = await fetch('/inx/run', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ loop: true })
+                        });
+                        const res = await resp.json();
+                        if (!resp.ok) {
+                            alert(res.message || 'Error starting loop.');
+                            status.textContent = 'Error';
+                            status.style.color = '#F44336';
+                        } else {
+                            updateWorkflowUI({ loop_active: true });
+                        }
+                    } catch (e) {
+                        alert('Network error starting loop.');
+                        status.textContent = 'Network error';
+                        status.style.color = '#F44336';
+                    } finally {
+                        loopBtn.disabled = false;
+                    }
+                }
+            }
+
+            async function cancelExecution() {
+                cancelBtn.disabled = true;
+                status.textContent = 'Cancelling...';
+                status.style.color = '#F44336';
+
+                try {
+                    await fetch('/inx/cancel', { method: 'POST' });
+                    updateWorkflowUI({ loop_active: false });
+                    status.textContent = 'Cancelled';
+                    status.style.color = '#F44336';
+                    setTimeout(() => {
+                        if (status.textContent === 'Cancelled') {
+                            status.textContent = 'Ready';
+                            status.style.color = '#4CAF50';
+                        }
+                    }, 2500);
+                } catch (e) {
+                } finally {
+                    setTimeout(() => { cancelBtn.disabled = false; }, 600);
                 }
             }
 
@@ -553,9 +841,12 @@ async def handle_index(request):
 
                                 if (data.type === 'init') {
                                     updatePromptUI(data);
+                                    updateWorkflowUI(data);
                                 }
                             } else if (data.type === 'text_update') {
                                 updatePromptUI(data);
+                            } else if (data.type === 'workflow_status') {
+                                updateWorkflowUI(data);
                             } else if (data.type === 'cleared') {
                                 totalImages = 0;
                                 currentIndex = 0;
@@ -624,7 +915,8 @@ async def handle_ws(request):
         "total": len(HISTORY_FILES),
         "default_text": DEFAULT_TEXT,
         "custom_text": CUSTOM_TEXT,
-        "is_custom": CUSTOM_TEXT is not None
+        "is_custom": CUSTOM_TEXT is not None,
+        "loop_active": LOOP_ACTIVE
     })
 
     try:
@@ -633,6 +925,85 @@ async def handle_ws(request):
     finally:
         CONNECTED_WEBSOCKETS.remove(ws)
     return ws
+
+
+@PromptServer.instance.routes.post("/inx/run")
+async def handle_run(request):
+    global LOOP_ACTIVE
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    loop = data.get("loop", False)
+    LOOP_ACTIVE = bool(loop)
+
+    success, result = await trigger_run()
+    if not success:
+        LOOP_ACTIVE = False
+        return web.json_response({"status": "error", "message": result}, status=400)
+
+    payload = {
+        "type": "workflow_status",
+        "status": "running",
+        "loop_active": LOOP_ACTIVE,
+        "prompt_id": result
+    }
+    for ws in list(CONNECTED_WEBSOCKETS):
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            pass
+
+    return web.json_response({"status": "running", "prompt_id": result, "loop_active": LOOP_ACTIVE})
+
+
+@PromptServer.instance.routes.post("/inx/stop_loop")
+async def handle_stop_loop(request):
+    global LOOP_ACTIVE
+    LOOP_ACTIVE = False
+    payload = {
+        "type": "workflow_status",
+        "status": "loop_stopped",
+        "loop_active": False
+    }
+    for ws in list(CONNECTED_WEBSOCKETS):
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            pass
+    return web.json_response({"status": "loop_stopped", "loop_active": False})
+
+
+@PromptServer.instance.routes.post("/inx/cancel")
+async def handle_cancel(request):
+    global LOOP_ACTIVE, IS_RUNNING
+    LOOP_ACTIVE = False
+    IS_RUNNING = False
+
+    try:
+        PromptServer.instance.prompt_queue.wipe_queue()
+    except Exception:
+        pass
+
+    try:
+        import nodes
+        nodes.interrupt_processing()
+    except Exception:
+        pass
+
+    payload = {
+        "type": "workflow_status",
+        "status": "cancelled",
+        "loop_active": False
+    }
+    for ws in list(CONNECTED_WEBSOCKETS):
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            pass
+
+    return web.json_response({"status": "cancelled", "loop_active": False})
 
 
 @PromptServer.instance.routes.get("/inx/text")
@@ -771,6 +1142,22 @@ class ServeImageLAN:
                 await ws.send_json(payload)
             except Exception:
                 pass
+
+        if LOOP_ACTIVE:
+            import asyncio
+            async def schedule_next():
+                await asyncio.sleep(0.5)
+                if LOOP_ACTIVE:
+                    success, msg = await trigger_run()
+                    if not success:
+                        print(f"\n[Serve Image on LAN] Loop stopped: {msg}\n")
+                        err_payload = {"type": "workflow_status", "status": "error", "loop_active": False, "message": msg}
+                        for ws in list(CONNECTED_WEBSOCKETS):
+                            try:
+                                await ws.send_json(err_payload)
+                            except Exception:
+                                pass
+            asyncio.create_task(schedule_next())
 
         return ()
 

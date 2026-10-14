@@ -7,6 +7,9 @@ A custom node for ComfyUI that streams real-time KSampler step previews and serv
 ## Features
 
 - **Three-Tab Mobile Interface**: Designed with a responsive layout that fits mobile viewports (iOS & Android) perfectly with **Gallery**, **Live Preview**, and **Prompt** tabs.
+- **Remote Workflow Execution**: Trigger workflow runs directly from your mobile device via the persistent **Run** and **Run (Instant)** buttons.
+- **Run (Instant) Continuous Loop**: Keep generating in a continuous loop—tap "Stop Loop" or "Cancel" anytime to halt.
+- **Instant Generation Cancel**: Abort running KSampler steps and clear pending queues on the fly with the **Cancel** button.
 - **LAN Prompt / Text Customization**: View and edit prompts remotely from any connected device. Save customized prompts on the fly or revert back to the workflow default with a single tap.
 - **Real-Time KSampler Live Preview**: Hooks directly into ComfyUI's core WebSocket stream (`send_bytes` / `send_image`) to parse and display `latent2rgb` preview frames frame-by-frame while sampling.
 - **Seamless Live-to-Final Transition**: When a workflow run finishes, the **Live Preview** tab automatically updates from the lossy KSampler preview to the full-resolution, VAE-decoded PNG image.
@@ -53,11 +56,17 @@ python main.py --listen 0.0.0.0 --port 8000 --preview-method latent2rgb
 ### 2. Live Preview & Image Gallery (`Serve Image on LAN`)
 1. Add the **`Serve Image on LAN`** node (under **`inx`** category).
 2. Connect any image output (e.g., from a VAE Decode node) to the **`Serve Image on LAN`** node's `images` input.
-3. Run the workflow. Your terminal console will print the local network address:
+3. Run the workflow once from ComfyUI to activate the LAN session. Your terminal console will print the local network address:
    [Serve Image on LAN] Image added to history (1)
    -> Access: http://192.168.x.x:8000/inx/view
 
 4. Open `http://<your-pc-ip>:8000/inx/view` in any desktop or mobile browser connected to the same Wi-Fi network.
+
+### 3. Remote Control: Run, Run (Instant) Loop & Cancel
+Once a workflow has been run at least once in ComfyUI, the bottom action bar allows you to trigger and control generation directly from the web interface across all tabs:
+- **Run**: Triggers execution of the active workflow as configured.
+- **Run (Instant)**: Enters a continuous loop that automatically queues the next generation as soon as each image is saved. While looping, the button turns into a pulsing **Stop Loop** button to cleanly finish after the current run.
+- **Cancel**: Immediately halts the current generation via ComfyUI's interrupt mechanism and wipes any queued prompts.
 
 ---
 
