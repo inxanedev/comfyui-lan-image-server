@@ -1,13 +1,19 @@
 import copy
+import io
+import json
 import os
 import random
 import shutil
 import socket
 import time
 import uuid
+import numpy as np
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 from aiohttp import web
 from server import PromptServer
+
+import folder_paths
 
 # Directory configuration
 NODE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -556,27 +562,65 @@ class ServeImageLAN:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "images": ("IMAGE",),
-            }
+                "images": ("IMAGE", {"tooltip": "The images to preview and serve over the LAN."}),
+            },
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO",
+            },
         }
 
-    RETURN_TYPES = ()
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("images",)
     FUNCTION = "serve"
     OUTPUT_NODE = True
     CATEGORY = "inx"
+    DESCRIPTION = "Serves images over the LAN and shows an in-node preview. Passes the image through so it can be chained to other nodes."
 
-    async def serve(self, images):
+    async def serve(self, images, prompt=None, extra_pnginfo=None):
         global HISTORY_FILES
 
         ensure_clean_temp_dir()
 
-        i = 255.0 * images[0].cpu().numpy()
-        img = Image.fromarray(i.astype('uint8'))
-        
-        filename = f"img_{len(HISTORY_FILES) + 1:05d}.png"
-        filepath = os.path.join(TEMP_DIR, filename)
-        img.save(filepath, format='PNG')
-        HISTORY_FILES.append(filepath)
+        metadata = PngInfo()
+        if prompt is not None:
+            metadata.add_text("prompt", json.dumps(prompt))
+        if extra_pnginfo is not None:
+            for key in extra_pnginfo:
+                metadata.add_text(key, json.dumps(extra_pnginfo[key]))
+
+        temp_dir = folder_paths.get_temp_directory()
+        os.makedirs(temp_dir, exist_ok=True)
+        full_output_folder, filename, counter, subfolder, _ = folder_paths.get_save_image_path(
+            "inx_preview", temp_dir, images[0].shape[1], images[0].shape[0]
+        )
+
+        preview_images = []
+        for image in images:
+            i = 255.0 * image.cpu().numpy()
+            img = Image.fromarray(np.clip(i, 0, 255).astype('uint8'))
+
+            buffer = io.BytesIO()
+            img.save(buffer, format='PNG', pnginfo=metadata, compress_level=1)
+            data = buffer.getvalue()
+
+            # In-node preview copy (served by ComfyUI's /view endpoint)
+            preview_name = f"{filename}_{counter:05}_.png"
+            with open(os.path.join(full_output_folder, preview_name), "wb") as f:
+                f.write(data)
+            preview_images.append({
+                "filename": preview_name,
+                "subfolder": subfolder,
+                "type": "temp",
+            })
+            counter += 1
+
+            # LAN history copy (served via /inx/image)
+            lan_name = f"img_{len(HISTORY_FILES) + 1:05d}.png"
+            lan_path = os.path.join(TEMP_DIR, lan_name)
+            with open(lan_path, "wb") as f:
+                f.write(data)
+            HISTORY_FILES.append(lan_path)
 
         try:
             hostname = socket.gethostname()
@@ -594,7 +638,7 @@ class ServeImageLAN:
             "total": len(HISTORY_FILES),
             "epoch": HISTORY_EPOCH
         }
-        
+
         for ws in list(CONNECTED_WEBSOCKETS):
             try:
                 await ws.send_json(payload)
@@ -617,7 +661,7 @@ class ServeImageLAN:
                                 pass
             asyncio.create_task(schedule_next())
 
-        return ()
+        return {"ui": {"images": preview_images}, "result": (images,)}
 
 
 class ServeTextLAN:
