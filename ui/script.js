@@ -324,9 +324,7 @@ function updateWorkflowUI(data) {
 
 async function runOnce() {
     await flushResolution();
-    if (currentTab === 'prompt' && promptInput) {
-        await saveText();
-    }
+    await flushText();
     runBtn.disabled = true;
     status.textContent = 'Queuing run...';
     status.style.color = '#2196F3';
@@ -367,9 +365,7 @@ async function toggleLoop() {
         }
     } else {
         await flushResolution();
-        if (currentTab === 'prompt' && promptInput) {
-            await saveText();
-        }
+        await flushText();
         loopBtn.disabled = true;
         status.textContent = 'Starting loop...';
         status.style.color = '#FFA000';
@@ -497,6 +493,13 @@ async function revertText() {
     }
 }
 
+async function flushText() {
+    if (!promptInput) return;
+    const current = isCustom ? (customText || '') : (defaultText || '');
+    if (promptInput.value === current) return;
+    await saveText();
+}
+
 async function refreshSeeds() {
     try {
         const resp = await fetch('/inx/seed');
@@ -518,6 +521,8 @@ function updateSeedUI(data) {
     if (!data.seeds.length) {
         seedSection.classList.remove('visible');
         seedSection.classList.remove('open');
+        const hiddenHeader = seedSection.querySelector('.acc-header');
+        if (hiddenHeader) hiddenHeader.setAttribute('aria-expanded', 'false');
         seedList.innerHTML = '';
         return;
     }
@@ -627,7 +632,12 @@ function toggleAccordion(name) {
     if (willOpen) {
         target.classList.add('open');
         const header = target.querySelector('.acc-header');
-        if (header) header.setAttribute('aria-expanded', 'true');
+        if (header) {
+            header.setAttribute('aria-expanded', 'true');
+            requestAnimationFrame(() => {
+                header.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            });
+        }
     }
 }
 
