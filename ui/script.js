@@ -19,6 +19,10 @@ const revertBtn = document.getElementById('revertBtn');
 const saveBtn = document.getElementById('saveBtn');
 const promptNotice = document.getElementById('promptNotice');
 
+const seedSection = document.getElementById('seedSection');
+const seedList = document.getElementById('seedList');
+const seedBadge = document.getElementById('seedBadge');
+
 const runBtn = document.getElementById('runBtn');
 const loopBtn = document.getElementById('loopBtn');
 const cancelBtn = document.getElementById('cancelBtn');
@@ -378,6 +382,120 @@ async function revertText() {
     }
 }
 
+async function refreshSeeds() {
+    try {
+        const resp = await fetch('/inx/seed');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        updateSeedUI(data);
+    } catch (e) {}
+}
+
+function seedModeLabel(mode) {
+    if (mode === 'random') return 'Random each run';
+    if (mode === 'fixed') return 'Fixed';
+    return 'Default';
+}
+
+function updateSeedUI(data) {
+    if (!data || !Array.isArray(data.seeds)) return;
+
+    if (!data.seeds.length) {
+        seedSection.classList.remove('visible');
+        seedList.innerHTML = '';
+        return;
+    }
+
+    seedSection.classList.add('visible');
+    const overridden = data.seeds.filter(s => s.mode && s.mode !== 'default').length;
+    seedBadge.textContent = overridden ? 'Overridden' : 'Default';
+    seedBadge.classList.toggle('badge-custom', overridden > 0);
+
+    seedList.innerHTML = '';
+    for (const node of data.seeds) {
+        const card = document.createElement('div');
+        card.className = 'seed-node';
+
+        const top = document.createElement('div');
+        top.className = 'seed-node-top';
+        const name = document.createElement('span');
+        name.className = 'seed-node-name';
+        name.textContent = node.title || node.id;
+        const badge = document.createElement('span');
+        badge.className = 'badge' + (node.mode && node.mode !== 'default' ? ' badge-custom' : '');
+        badge.textContent = seedModeLabel(node.mode);
+        top.appendChild(name);
+        top.appendChild(badge);
+
+        const row1 = document.createElement('div');
+        row1.className = 'seed-row';
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'seed-input';
+        input.step = '1';
+        input.min = String(node.min != null ? node.min : -1125899906842624);
+        input.max = String(node.max != null ? node.max : 1125899906842624);
+        const displayValue = node.mode === 'fixed' && node.value != null ? node.value : node.current;
+        input.value = displayValue != null ? String(displayValue) : '';
+        const setBtn = document.createElement('button');
+        setBtn.className = 'btn seed-btn';
+        setBtn.textContent = 'Set';
+        setBtn.onclick = () => setSeed(node.id, 'fixed', input.value);
+        row1.appendChild(input);
+        row1.appendChild(setBtn);
+
+        const row2 = document.createElement('div');
+        row2.className = 'seed-row';
+        const randomBtn = document.createElement('button');
+        randomBtn.className = 'btn seed-btn' + (node.mode === 'random' ? ' active-random' : '');
+        randomBtn.textContent = 'Random each run';
+        randomBtn.style.flex = '1';
+        randomBtn.onclick = () => setSeed(node.id, 'random', null);
+        const newRandomBtn = document.createElement('button');
+        newRandomBtn.className = 'btn seed-btn';
+        newRandomBtn.textContent = 'New random';
+        newRandomBtn.style.flex = '1';
+        newRandomBtn.onclick = () => setSeed(node.id, 'new_random', null);
+        const resetBtn = document.createElement('button');
+        resetBtn.className = 'btn seed-btn';
+        resetBtn.textContent = 'Reset';
+        resetBtn.style.flex = '0.8';
+        resetBtn.onclick = () => setSeed(node.id, 'default', null);
+        row2.appendChild(randomBtn);
+        row2.appendChild(newRandomBtn);
+        row2.appendChild(resetBtn);
+
+        card.appendChild(top);
+        card.appendChild(row1);
+        card.appendChild(row2);
+        seedList.appendChild(card);
+    }
+}
+
+async function setSeed(id, mode, value) {
+    try {
+        const body = { id: String(id), mode: mode };
+        if (mode === 'fixed') {
+            body.value = parseInt(value, 10);
+            if (!Number.isFinite(body.value)) {
+                alert('Please enter a valid integer seed.');
+                return;
+            }
+        }
+        const resp = await fetch('/inx/seed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await resp.json();
+        if (data && data.seeds) {
+            updateSeedUI(data);
+        } else if (data && data.message) {
+            alert(data.message);
+        }
+    } catch (e) {}
+}
+
 function updateGalleryImage() {
     if (totalImages === 0) {
         img.style.display = 'none';
@@ -503,8 +621,16 @@ function connectWS() {
                         updatePromptUI(data);
                         updateWorkflowUI(data);
                     }
+
+                    if (data.seeds) {
+                        updateSeedUI(data);
+                    } else {
+                        refreshSeeds();
+                    }
                 } else if (data.type === 'text_update') {
                     updatePromptUI(data);
+                } else if (data.type === 'seed_update') {
+                    updateSeedUI(data);
                 } else if (data.type === 'workflow_status') {
                     updateWorkflowUI(data);
                 } else if (data.type === 'cleared') {
@@ -543,3 +669,4 @@ fetch('/inx/text')
     .then(r => r.json())
     .then(data => updatePromptUI(data))
     .catch(() => {});
+refreshSeeds();

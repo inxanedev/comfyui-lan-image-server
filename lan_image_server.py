@@ -1,5 +1,6 @@
 import copy
 import os
+import random
 import shutil
 import socket
 import time
@@ -24,6 +25,12 @@ TEXT_REVISION = 0
 LAST_PROMPT_INFO = None
 LOOP_ACTIVE = False
 IS_RUNNING = False
+
+# rgthree Seed node integration
+RGTHREE_SEED_CLASS = "Seed (rgthree)"
+RGTHREE_SEED_MAX = 1125899906842624
+SEED_OVERRIDES = {}
+SKIP_NEXT_CAPTURE = False
 
 def ensure_clean_temp_dir():
     """Clears the temp directory when the server starts for the first time."""
@@ -66,7 +73,10 @@ if hasattr(PromptServer.instance, 'prompt_queue') and hasattr(PromptServer.insta
     original_prompt_queue_put = PromptServer.instance.prompt_queue.put
 
     def hooked_prompt_queue_put(item):
-        global LAST_PROMPT_INFO
+        global LAST_PROMPT_INFO, SKIP_NEXT_CAPTURE
+        if SKIP_NEXT_CAPTURE:
+            SKIP_NEXT_CAPTURE = False
+            return original_prompt_queue_put(item)
         try:
             if isinstance(item, (tuple, list)) and len(item) >= 3:
                 prompt = item[2]
@@ -124,8 +134,65 @@ def get_active_prompt():
     return None
 
 
+def get_seed_nodes():
+    """Lists every 'Seed (rgthree)' node found in the active workflow prompt."""
+    info = get_active_prompt()
+    if not info:
+        return []
+
+    prompt = info.get("prompt") or {}
+    extra_data = info.get("extra_data") or {}
+
+    titles = {}
+    try:
+        workflow = (extra_data.get("extra_pnginfo") or {}).get("workflow") or {}
+        for node in workflow.get("nodes", []):
+            nid = str(node.get("id"))
+            titles[nid] = node.get("title") or node.get("type") or nid
+    except Exception:
+        pass
+
+    nodes = []
+    for nid, node in prompt.items():
+        if not isinstance(node, dict) or node.get("class_type") != RGTHREE_SEED_CLASS:
+            continue
+        inputs = node.get("inputs") or {}
+        if "seed" not in inputs:
+            continue
+
+        override = SEED_OVERRIDES.get(str(nid))
+        mode = override.get("mode", "default") if override else "default"
+        nodes.append({
+            "id": str(nid),
+            "title": titles.get(str(nid), str(nid)),
+            "current": inputs.get("seed"),
+            "mode": mode,
+            "value": override.get("value") if override else None,
+            "min": -RGTHREE_SEED_MAX,
+            "max": RGTHREE_SEED_MAX,
+        })
+
+    nodes.sort(key=lambda n: n["id"])
+    return nodes
+
+
+def apply_seed_overrides(prompt):
+    """Patches the deep-copied prompt's 'Seed (rgthree)' nodes with any active overrides."""
+    for nid, node in prompt.items():
+        if not isinstance(node, dict) or node.get("class_type") != RGTHREE_SEED_CLASS:
+            continue
+        override = SEED_OVERRIDES.get(str(nid))
+        if not override:
+            continue
+        mode = override.get("mode")
+        if mode == "random":
+            node.setdefault("inputs", {})["seed"] = -1
+        elif mode == "fixed":
+            node.setdefault("inputs", {})["seed"] = int(override.get("value", 0))
+
+
 async def trigger_run():
-    global IS_RUNNING
+    global IS_RUNNING, SKIP_NEXT_CAPTURE
     info = get_active_prompt()
     if not info:
         return False, "No active workflow prompt found. Run the workflow once from ComfyUI first."
@@ -148,6 +215,8 @@ async def trigger_run():
             except Exception:
                 pass
 
+        apply_seed_overrides(prompt)
+
         import execution
         valid = await execution.validate_prompt(prompt_id, prompt, None)
         if valid[0]:
@@ -159,6 +228,7 @@ async def trigger_run():
 
             # ComfyUI main.py prompt_worker strictly requires item[5] to be the sensitive dict
             item = (number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive)
+            SKIP_NEXT_CAPTURE = True
             PromptServer.instance.prompt_queue.put(item)
             return True, prompt_id
         else:
@@ -175,6 +245,7 @@ async def trigger_run():
         try:
             outputs_to_execute = info.get("outputs_to_execute") or []
             item = (number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive)
+            SKIP_NEXT_CAPTURE = True
             PromptServer.instance.prompt_queue.put(item)
             return True, prompt_id
         except Exception as inner_e:
@@ -242,7 +313,8 @@ async def handle_ws(request):
         "default_text": DEFAULT_TEXT,
         "custom_text": CUSTOM_TEXT,
         "is_custom": CUSTOM_TEXT is not None,
-        "loop_active": LOOP_ACTIVE
+        "loop_active": LOOP_ACTIVE,
+        "seeds": get_seed_nodes()
     })
 
     try:
@@ -391,6 +463,58 @@ async def handle_revert_text(request):
             pass
 
     return web.json_response({"status": "reverted", "is_custom": False})
+
+
+@PromptServer.instance.routes.get("/inx/seed")
+async def handle_get_seed(request):
+    return web.json_response({"seeds": get_seed_nodes()})
+
+
+@PromptServer.instance.routes.post("/inx/seed")
+async def handle_post_seed(request):
+    global SEED_OVERRIDES
+
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    node_id = str(data.get("id", ""))
+    mode = data.get("mode", "default")
+
+    valid_ids = {n["id"] for n in get_seed_nodes()}
+    if node_id not in valid_ids:
+        return web.json_response(
+            {"status": "error", "message": "Seed (rgthree) node not found in the active workflow."},
+            status=400
+        )
+
+    if mode == "default":
+        SEED_OVERRIDES.pop(node_id, None)
+    elif mode == "random":
+        SEED_OVERRIDES[node_id] = {"mode": "random"}
+    elif mode == "fixed":
+        try:
+            value = int(data.get("value"))
+        except (TypeError, ValueError):
+            return web.json_response({"status": "error", "message": "Invalid seed value."}, status=400)
+        value = max(-RGTHREE_SEED_MAX, min(RGTHREE_SEED_MAX, value))
+        SEED_OVERRIDES[node_id] = {"mode": "fixed", "value": value}
+    elif mode == "new_random":
+        value = random.randint(0, RGTHREE_SEED_MAX)
+        SEED_OVERRIDES[node_id] = {"mode": "fixed", "value": value}
+    else:
+        return web.json_response({"status": "error", "message": "Unknown seed mode."}, status=400)
+
+    seeds = get_seed_nodes()
+    payload = {"type": "seed_update", "seeds": seeds}
+    for ws in list(CONNECTED_WEBSOCKETS):
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            pass
+
+    return web.json_response({"status": "ok", "seeds": seeds})
 
 
 @PromptServer.instance.routes.post("/inx/kill_server")

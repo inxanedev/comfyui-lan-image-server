@@ -198,7 +198,8 @@ img {
     color: #bbb;
 }
 #promptInput {
-    flex: 1;
+    flex: 1 1 0;
+    min-height: 0;
     width: 100%;
     background: #141418;
     color: #fff;
@@ -233,4 +234,84 @@ img {
     text-align: center;
     min-height: 16px;
     color: #888;
+}
+#seedSection {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    flex-shrink: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 12px;
+    min-height: 0;
+}
+#seedSection.visible {
+    display: flex;
+}
+.seed-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: #aaa;
+}
+.seed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 42vh;
+    overflow-y: auto;
+}
+.seed-node {
+    background: #141418;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.seed-node-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+.seed-node-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ccc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.seed-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.seed-input {
+    flex: 1 1 0;
+    min-width: 0;
+    background: #0e0e10;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+}
+.seed-input:focus {
+    border-color: #4CAF50;
+}
+.seed-btn {
+    padding: 8px 10px;
+    font-size: 12px;
+    border-radius: 6px;
+    white-space: nowrap;
+}
+.seed-btn.active-random {
+    background: #6b21a8;
+    border-color: #7c3aed;
+}
+.seed-btn.active-random:active {
+    background: #7c3aed;
 }
