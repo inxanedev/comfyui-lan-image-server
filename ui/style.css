@@ -317,6 +317,31 @@ body {
     color: var(--text-faint);
 }
 
+#progressPill {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 5;
+    display: none;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    background: var(--glass-bg-strong);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22), inset 0 1px 0 var(--glass-highlight);
+    backdrop-filter: blur(18px) saturate(180%);
+    -webkit-backdrop-filter: blur(18px) saturate(180%);
+    transition: background 0.5s ease, border-color 0.5s ease;
+}
+
+#progressPill.visible {
+    display: block;
+}
+
 /* ---------- Settings tab (accordion) ---------- */
 
 #promptContainer {
@@ -840,12 +865,26 @@ body {
 #saveBar {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 8px;
     width: 100%;
 }
 
-#downloadBtn {
+.save-row {
+    display: flex;
+    gap: 8px;
     width: 100%;
+}
+
+.save-row .btn {
+    flex: 1 1 0;
+}
+
+.btn.chip {
+    min-height: 40px;
+    padding: 9px 12px;
+    font-size: 13px;
+    border-radius: 12px;
+    color: var(--text-dim);
 }
 
 .save-meta {

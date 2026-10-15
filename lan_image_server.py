@@ -10,6 +10,7 @@ import socket
 import subprocess
 import time
 import uuid
+import zipfile
 import numpy as np
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
@@ -89,6 +90,27 @@ if original_send_bytes:
         return await original_send_bytes(event, data, sid=sid)
 
     PromptServer.instance.send_bytes = hooked_send_bytes.__get__(
+        PromptServer.instance, PromptServer
+    )
+
+# ------------------------------------------------------------------
+# Hook into PromptServer send_sync to mirror sampling progress
+# ------------------------------------------------------------------
+
+original_send_sync = getattr(PromptServer.instance, 'send_sync', None)
+
+if original_send_sync:
+    def hooked_send_sync(self, event, data, sid=None):
+        try:
+            if event == "progress" and isinstance(data, dict):
+                broadcast_json({"type": "progress", "value": data.get("value"), "max": data.get("max")})
+            elif event == "executing" and isinstance(data, dict) and data.get("node") is None:
+                broadcast_json({"type": "progress", "value": None, "max": None})
+        except Exception:
+            pass
+        return original_send_sync(event, data, sid=sid)
+
+    PromptServer.instance.send_sync = hooked_send_sync.__get__(
         PromptServer.instance, PromptServer
     )
 
@@ -409,6 +431,113 @@ async def handle_image(request):
         return web.Response(status=404, text="Image not found.")
 
 
+def _extract_image_params(filepath):
+    """Best-effort extraction of generation settings from a PNG's embedded prompt."""
+    result = {"seed": None, "width": None, "height": None, "positive": None, "negative": None}
+    try:
+        with Image.open(filepath) as image:
+            text = getattr(image, "text", None) or {}
+        raw = text.get("prompt")
+        prompt = json.loads(raw) if raw else None
+    except Exception:
+        prompt = None
+
+    if not isinstance(prompt, dict):
+        return result
+
+    def inputs_of(node):
+        return node.get("inputs", {}) if isinstance(node, dict) else {}
+
+    # Seed (prefer the rgthree Seed node, else any integer seed input)
+    for nid, node in prompt.items():
+        if isinstance(node, dict) and node.get("class_type") == RGTHREE_SEED_CLASS:
+            seed = inputs_of(node).get("seed")
+            if isinstance(seed, int):
+                result["seed"] = seed
+                break
+    if result["seed"] is None:
+        for node in prompt.values():
+            seed = inputs_of(node).get("seed")
+            if isinstance(seed, int):
+                result["seed"] = seed
+                break
+
+    # Size (first node exposing both width and height)
+    for node in prompt.values():
+        node_inputs = inputs_of(node)
+        if isinstance(node_inputs.get("width"), int) and isinstance(node_inputs.get("height"), int):
+            result["width"] = node_inputs["width"]
+            result["height"] = node_inputs["height"]
+            break
+
+    def resolve_text(ref):
+        if isinstance(ref, list) and ref:
+            node = prompt.get(str(ref[0]))
+            text_value = inputs_of(node).get("text")
+            if isinstance(text_value, str):
+                return text_value
+        return None
+
+    for node in prompt.values():
+        node_inputs = inputs_of(node)
+        if result["positive"] is None and "positive" in node_inputs:
+            result["positive"] = resolve_text(node_inputs.get("positive"))
+        if result["negative"] is None and "negative" in node_inputs:
+            result["negative"] = resolve_text(node_inputs.get("negative"))
+
+    if result["positive"] is None:
+        texts = [
+            inputs_of(n).get("text") for n in prompt.values()
+            if isinstance(n, dict) and n.get("class_type") == "CLIPTextEncode"
+            and isinstance(inputs_of(n).get("text"), str)
+        ]
+        if texts:
+            result["positive"] = max(texts, key=len)
+
+    return result
+
+
+@PromptServer.instance.routes.get("/inx/image/params")
+async def handle_image_params(request):
+    if not HISTORY_FILES:
+        return web.json_response({"error": "no images"}, status=404)
+    try:
+        idx = int(request.query.get("index", len(HISTORY_FILES) - 1))
+        filepath = HISTORY_FILES[idx]
+    except (IndexError, ValueError):
+        return web.json_response({"error": "not found"}, status=404)
+    return web.json_response(_extract_image_params(filepath))
+
+
+@PromptServer.instance.routes.get("/inx/download_all")
+async def handle_download_all(request):
+    clean = request.query.get("clean", None) in ("1", "true", "yes")
+
+    if not HISTORY_FILES:
+        return web.Response(status=404, text="No images available.")
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archive:
+        for i, filepath in enumerate(HISTORY_FILES):
+            name = f"inx_{i + 1:05d}.png"
+            if clean:
+                with Image.open(filepath) as image:
+                    stripped = io.BytesIO()
+                    image.save(stripped, format='PNG', compress_level=4)
+                archive.writestr(name, stripped.getvalue())
+            else:
+                archive.write(filepath, arcname=name)
+
+    return web.Response(
+        body=buffer.getvalue(),
+        content_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="inx_images.zip"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @PromptServer.instance.routes.get("/inx/ws")
 async def handle_ws(request):
     ws = web.WebSocketResponse()
@@ -499,6 +628,8 @@ async def handle_cancel(request):
         nodes.interrupt_processing()
     except Exception:
         pass
+
+    broadcast_json({"type": "progress", "value": None, "max": None})
 
     payload = {
         "type": "workflow_status",

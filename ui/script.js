@@ -29,8 +29,12 @@ const cancelBtn = document.getElementById('cancelBtn');
 const galleryBar = document.getElementById('galleryBar');
 const saveBar = document.getElementById('saveBar');
 const downloadBtn = document.getElementById('downloadBtn');
+const downloadAllBtn = document.getElementById('downloadAllBtn');
+const reuseBtn = document.getElementById('reuseBtn');
+const copyPromptBtn = document.getElementById('copyPromptBtn');
 const stripMetadata = document.getElementById('stripMetadata');
 const workflowBar = document.getElementById('workflowBar');
+const progressPill = document.getElementById('progressPill');
 
 let currentTab = 'gallery';
 let totalImages = 0;
@@ -41,6 +45,10 @@ let defaultText = '';
 let customText = null;
 let isCustom = false;
 let loopActive = false;
+
+let seedNodes = [];
+let progressValue = null;
+let progressMax = null;
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
@@ -307,6 +315,8 @@ function switchTab(tab) {
         galleryBar.style.display = 'none';
         saveBar.style.display = 'none';
     }
+
+    updateProgressUI();
 }
 
 function updateWorkflowUI(data) {
@@ -331,6 +341,7 @@ function updateWorkflowUI(data) {
 async function runOnce() {
     await flushResolution();
     await flushText();
+    setProgress(null);
     runBtn.disabled = true;
     status.textContent = 'Queuing run...';
     status.style.color = '#2196F3';
@@ -372,6 +383,7 @@ async function toggleLoop() {
     } else {
         await flushResolution();
         await flushText();
+        setProgress(null);
         loopBtn.disabled = true;
         status.textContent = 'Starting loop...';
         status.style.color = '#FFA000';
@@ -523,6 +535,7 @@ function seedModeLabel(mode) {
 
 function updateSeedUI(data) {
     if (!data || !Array.isArray(data.seeds)) return;
+    seedNodes = data.seeds;
 
     if (!data.seeds.length) {
         seedSection.classList.remove('visible');
@@ -812,6 +825,9 @@ async function updateGalleryImage() {
         prevBtn.disabled = true;
         nextBtn.disabled = true;
         downloadBtn.disabled = true;
+        downloadAllBtn.disabled = true;
+        reuseBtn.disabled = true;
+        copyPromptBtn.disabled = true;
         displayedImageKey = null;
         return;
     }
@@ -820,6 +836,9 @@ async function updateGalleryImage() {
     prevBtn.disabled = (currentIndex <= 1);
     nextBtn.disabled = (currentIndex >= totalImages);
     downloadBtn.disabled = false;
+    downloadAllBtn.disabled = false;
+    reuseBtn.disabled = false;
+    copyPromptBtn.disabled = false;
 
     const index = currentIndex - 1;
     const key = `gallery:${imageEpoch}:${index}`;
@@ -864,6 +883,27 @@ function navigate(delta) {
         currentIndex = newIndex;
         updateGalleryImage();
     }
+}
+
+function updateProgressUI() {
+    if (!progressPill) return;
+    if (currentTab === 'live' && progressValue != null && progressMax) {
+        progressPill.textContent = `${progressValue} / ${progressMax}`;
+        progressPill.classList.add('visible');
+    } else {
+        progressPill.classList.remove('visible');
+    }
+}
+
+function setProgress(value, max) {
+    if (value == null) {
+        progressValue = null;
+        progressMax = null;
+    } else {
+        progressValue = value;
+        progressMax = max;
+    }
+    updateProgressUI();
 }
 
 function connectWS() {
@@ -960,6 +1000,8 @@ function connectWS() {
                     updateSeedUI(data);
                 } else if (data.type === 'resolution_update') {
                     applyResolutionState(data);
+                } else if (data.type === 'progress') {
+                    setProgress(data.value, data.max);
                 } else if (data.type === 'workflow_status') {
                     updateWorkflowUI(data);
                 } else if (data.type === 'cleared') {
@@ -972,6 +1014,7 @@ function connectWS() {
                     livePreviewUrl = null;
                     livePreviewOwned = false;
                     pendingPreview = null;
+                    setProgress(null);
                     resetZoom();
                     if (currentTab === 'gallery') updateGalleryImage();
                     else updateLiveImage();
@@ -1011,6 +1054,119 @@ async function downloadCurrentImage() {
         alert('Could not save the image.');
     } finally {
         downloadBtn.disabled = (totalImages === 0);
+    }
+}
+
+async function downloadAll() {
+    if (totalImages === 0) return;
+    const clean = stripMetadata && stripMetadata.checked;
+    downloadAllBtn.disabled = true;
+    try {
+        const resp = await fetch(`/inx/download_all?clean=${clean ? 1 : 0}`);
+        if (!resp.ok) throw new Error('download failed');
+        const blob = await resp.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = 'inx_images.zip';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    } catch (e) {
+        alert('Could not save the images.');
+    } finally {
+        downloadAllBtn.disabled = (totalImages === 0);
+    }
+}
+
+async function reuseImageSettings() {
+    if (totalImages === 0) return;
+    const index = currentIndex - 1;
+    reuseBtn.disabled = true;
+    try {
+        const resp = await fetch(`/inx/image/params?index=${index}`);
+        if (!resp.ok) throw new Error('failed');
+        const params = await resp.json();
+        const applied = [];
+
+        if (params.seed != null && seedNodes.length) {
+            await setSeed(seedNodes[0].id, 'fixed', String(params.seed));
+            applied.push('seed');
+        }
+        if (params.width != null && params.height != null) {
+            const customEl = document.getElementById('resCustom');
+            const wEl = document.getElementById('resWidth');
+            const hEl = document.getElementById('resHeight');
+            if (customEl && wEl && hEl) {
+                customEl.checked = true;
+                wEl.value = String(params.width);
+                hEl.value = String(params.height);
+                onResolutionChange();
+                applied.push('size');
+            }
+        }
+        if (params.positive) {
+            promptInput.value = params.positive;
+            await saveText();
+            applied.push('prompt');
+        }
+
+        status.textContent = applied.length ? `Loaded ${applied.join(', ')}` : 'No settings in image';
+        status.style.color = applied.length ? '#4CAF50' : '#FFA000';
+        setTimeout(() => {
+            status.textContent = 'Ready';
+            status.style.color = '#4CAF50';
+        }, 2500);
+    } catch (e) {
+        alert('Could not read the image settings.');
+    } finally {
+        reuseBtn.disabled = (totalImages === 0);
+    }
+}
+
+async function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return;
+        } catch (e) {}
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+}
+
+async function copyPrompt() {
+    if (totalImages === 0) return;
+    const index = currentIndex - 1;
+    copyPromptBtn.disabled = true;
+    try {
+        const resp = await fetch(`/inx/image/params?index=${index}`);
+        if (!resp.ok) throw new Error('failed');
+        const params = await resp.json();
+        const text = params.positive || params.negative || '';
+        if (!text) {
+            status.textContent = 'No prompt in image';
+            status.style.color = '#FFA000';
+        } else {
+            await copyToClipboard(text);
+            status.textContent = 'Prompt copied';
+            status.style.color = '#4CAF50';
+        }
+        setTimeout(() => {
+            status.textContent = 'Ready';
+            status.style.color = '#4CAF50';
+        }, 2000);
+    } catch (e) {
+        alert('Could not read the prompt.');
+    } finally {
+        copyPromptBtn.disabled = (totalImages === 0);
     }
 }
 
