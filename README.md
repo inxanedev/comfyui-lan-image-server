@@ -2,31 +2,38 @@
 
 Turn any phone, tablet, or computer on your Wi-Fi into a **remote control for ComfyUI**.
 
-Watch generations happen live, start/stop runs, and tweak your prompt, seed, and resolution from the browser — no app, no account, no internet required. It started as a simple image viewer and grew into a lightweight control panel for ComfyUI over your local network.
+Watch generations happen live, start and stop runs, and edit your generation settings — prompt, negative, size, steps, CFG, sampler, scheduler and seed — straight from the browser. No app, no account, no internet required. It started as a simple image viewer and grew into a lightweight control panel for ComfyUI over your local network.
 
 ---
 
 ## Highlights
 
 **Watch**
-- **Live preview** of the KSampler as it samples, step by step.
+- **Live preview** of the KSampler as it samples, with a **step counter** (e.g. `12 / 20`).
 - **Seamless live-to-final**: the preview automatically swaps to the full-resolution finished image.
 - **Session gallery** with `Prev` / `Next` and a counter, so you can flip back through everything generated this session.
 - **Pinch-to-zoom & pan** on any image for inspecting details up close.
+- A status pill that turns green with **Done.** when a run finishes.
 
 **Control**
-- **Run** a workflow, or **Run (Instant)** to loop generation continuously.
+- **Run** a workflow, or **Run (Instant)** to loop generation continuously. Tap **Stop Loop** to finish after the current image.
 - **Cancel** instantly to abort sampling and clear the queue.
 - Works from any device on the same network, at the same time.
 
 **Customize (from the web UI)**
-- **Prompt / text** — swap the workflow prompt on the fly, or revert to the default.
+- One **Generation** panel for everything that goes into a run: **prompt** & **negative**, **size** (aspect ratio + megapixels, or exact width/height), **steps**, **CFG**, **sampler** and **scheduler**.
 - **Seed** — set a fixed seed, roll a new random one, or randomize every run (works with the `Seed (rgthree)` node).
-- **Resolution** — pick an aspect ratio and megapixel budget, or type exact width/height.
+- **Reset to defaults** restores everything to the workflow defaults in one tap.
+
+**Gallery actions**
+- **Save image** / **Save all** (a `.zip` of the session).
+- **Reuse settings** — reads the settings baked into a generated PNG and loads them back into the panel.
+- **Copy prompt**, and an optional **Remove metadata** toggle so saved images don't carry your workflow.
 
 **Nice to have**
 - Clean iOS-style interface with **light & dark mode**.
 - Smooth and snappy, with **image caching and preloading** so navigation is instant.
+- Remote **Clear** and **Shutdown PC** controls.
 - Images are **cleared automatically** on startup for a fresh session.
 
 ---
@@ -88,24 +95,22 @@ The core node — it streams images to the web panel.
 2. It shows a **preview right inside the node** (like *Preview Image*), so it can replace your existing preview node.
 3. Because it passes the image through, you can **daisy-chain** it: `VAE Decode -> Serve Image on LAN -> Save Image`.
 
-### `Serve Text on LAN`
-Lets you edit a prompt remotely.
+### `Fetch Generation Settings (LAN)`
+One node that outputs all of the generation settings, which you then control from the web panel. Its input widgets are the **workflow defaults**; anything you change in the panel overrides them for the next run.
 
-- **Input:** `default_text` (STRING) — your workflow's default prompt
-- **Output:** `text` (STRING)
-
-**How to use it**
-1. Type your default prompt into `default_text` (or feed it from another string node).
-2. Connect the `text` output to a **CLIPTextEncode** (or any other text input).
-
-### `Serve Resolution on LAN`
-Lets you change the output size remotely.
-
-- **Outputs:** `width` (INT), `height` (INT)
+- **Outputs:** `text` (STRING), `negative` (STRING), `width` (INT), `height` (INT), `steps` (INT), `cfg` (FLOAT), `sampler_name`, `scheduler`
+- **Inputs (defaults):** `default_text`, `default_negative`, `default_steps`, `default_cfg`, `default_sampler_name`, `default_scheduler`
 
 **How to use it**
-1. Connect `width` and `height` to the matching inputs on an **Empty Latent Image** (or any size input).
-2. Configure the size from the **Resolution** section of the web UI (see below).
+1. Set your defaults on the node (prompt, steps, etc.).
+2. Wire the outputs:
+   - `text` / `negative` → **CLIPTextEncode** (`text` input)
+   - `width` / `height` → **Empty Latent Image**
+   - `steps` / `cfg` / `sampler_name` / `scheduler` → **KSampler**
+     *(for `sampler_name` and `scheduler`, right-click the KSampler widget → **Convert widget to input** first)*
+3. Open the **Settings** tab to override any of them remotely. Resolution defaults to 1:1 at 1.5 MP and is configured in the panel.
+
+> **Tip:** if you already have the values on your nodes, you can leave the defaults blank and just wire the outputs — the panel's values take over.
 
 ---
 
@@ -114,25 +119,20 @@ Lets you change the output size remotely.
 The panel has three tabs: **Gallery**, **Live**, and **Settings**.
 
 ### Gallery
-Browse every image generated this session. Use **Prev** / **Next** and the counter (e.g. `3 / 7`). Pinch to zoom, drag to pan.
+Browse every image generated this session. Use **Prev** / **Next** and the counter (e.g. `3 / 7`) — the buttons stretch across the bar for easy tapping. Pinch to zoom, drag to pan.
+
+The **↓ button** on the right opens the gallery actions: **Save Image**, **Save All** (a `.zip`), **Reuse Settings**, **Copy Prompt**, and the **Remove metadata** toggle.
 
 ### Live
-The real-time sampler preview. When a generation finishes, it becomes the full-quality image.
+The real-time sampler preview, with the current **step counter** (e.g. `12 / 20`) in the corner. When a generation finishes it becomes the full-quality image, and the action bar here has **Run**, **Run (Instant)** / **Stop Loop**, and **Cancel**.
 
 ### Settings
-An expandable list of sections (only one opens at a time). What you see depends on which `inx` nodes are in your workflow:
+An expandable list of sections — only one opens at a time. What you see depends on which `inx` nodes are in your workflow:
 
-- **Prompt** — edit the text served by `Serve Text on LAN`. **Save** applies it to the next run; **Revert to default** restores the workflow's original text.
+- **Generation** — appears with `Fetch Generation Settings (LAN)`. Edit the **prompt** and **negative**, the **size** (aspect ratio + megapixels, or tick **Custom** for exact pixels — with a live size preview such as `1000x1000 px`), plus **Steps**, **CFG**, **Sampler** and **Scheduler**. A **Reset to defaults** button clears everything. Changes save automatically and apply to the next run.
 - **Seed (rgthree)** — appears only if a `Seed (rgthree)` node is in the workflow. Per node you can **Set** a fixed seed, roll a **New random** seed, switch to **Random each run**, or **Reset** to the workflow default.
-- **Resolution** — appears when `Serve Resolution on LAN` is in the workflow. Choose an **Aspect Ratio** (1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9) and a **Megapixels** value (0.5–2.0), or tick **Custom** to type exact pixel dimensions. The **Preview** shows the resulting size (e.g. `1000x1000 px`).
 
-### Action bar (always visible)
-- **Run** — queue the workflow once.
-- **Run (Instant)** — keep queuing as soon as each image finishes. Tap **Stop Loop** to stop after the current one.
-- **Cancel** — abort the current generation and clear the queue.
-- **Clear** — wipe the session gallery.
-
-Any change you make in **Settings** is applied to the very next run automatically.
+At the bottom of the Settings tab: **Clear Images** (wipes the session gallery *and* resets your overrides) and **Shutdown PC**.
 
 ---
 
@@ -142,8 +142,11 @@ Any change you make in **Settings** is applied to the very next run automaticall
 - **Seed control is opt-in.** The Seed section only shows up when you use the [`Seed (rgthree)`](https://github.com/rgthree/rgthree-comfy) node. Other seed inputs are left untouched.
 - **Run the workflow once from ComfyUI first** so the panel can capture it for remote runs.
 - **Session images live in `temp/`** and are purged on startup, so every launch starts clean.
-- **The `Clear` button resets your remote settings too.** Along with the image gallery, it clears the custom prompt, seed overrides, and resolution back to their defaults so a fresh session can't leak settings into another workflow.
-- **No authentication.** Every `/inx/*` endpoint is open to anyone who can reach the address — they can run, cancel, clear, and change settings. Keep it on a trusted LAN and **do not expose it to the internet** (no port forwarding, no public tunnels).
+- **Only your changes are stored.** Anything you set to the node's default value is treated as "default" rather than an override, so the panel only carries what you actually changed.
+- **`Reuse Settings` reads the PNG.** Each generated image embeds its prompt/workflow, so the panel can pull the prompt, size and seed back out of a good result (unless you saved it with metadata stripped).
+- **The `Clear` button resets your remote settings too.** Along with the image gallery, it clears generation overrides and seed overrides back to their defaults so a fresh session can't leak settings into another workflow.
+- **`Shutdown PC` really powers off the machine** (force-closing open apps). Use it deliberately.
+- **No authentication.** Every `/inx/*` endpoint is open to anyone who can reach the address — they can run, cancel, clear, change settings, and **shut down the PC**. Keep it on a trusted LAN and **do not expose it to the internet** (no port forwarding, no public tunnels).
 
 ---
 
