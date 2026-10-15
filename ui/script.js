@@ -56,6 +56,7 @@ let runInProgress = false;
 let upscalerAvailable = false;
 let upscaling = false;
 let upscaledIndices = new Set();
+let simpleMode = false;
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
@@ -317,15 +318,51 @@ function initWheelNavigation() {
 
 const DESKTOP_MQ = window.matchMedia('(min-width: 900px)');
 
+function visibleTabs() {
+    const tabs = [];
+    if (!simpleMode) tabs.push('gallery');
+    tabs.push('live');
+    if (!DESKTOP_MQ.matches) tabs.push('prompt'); // on desktop the Settings panel is docked
+    return tabs;
+}
+
 function updateTabIndicator() {
-    const order = ['gallery', 'live', 'prompt'];
-    const count = DESKTOP_MQ.matches ? 2 : 3;
-    let index = Math.max(0, order.indexOf(currentTab));
-    if (index > count - 1) index = count - 1;
+    const tabs = visibleTabs();
+    let index = tabs.indexOf(currentTab);
+    if (index < 0) index = 0;
     const indicator = document.getElementById('tabIndicator');
     if (indicator) {
-        indicator.style.width = `calc((100% - 8px) / ${count})`;
+        indicator.style.width = `calc((100% - 8px) / ${tabs.length})`;
         indicator.style.transform = `translateX(${index * 100}%)`;
+    }
+}
+
+function applySimpleMode() {
+    document.body.classList.toggle('simple-mode', simpleMode);
+    const toggle = document.getElementById('simpleModeToggle');
+    if (toggle) toggle.checked = simpleMode;
+    updateTabIndicator();
+}
+
+function initSimpleMode() {
+    try {
+        simpleMode = localStorage.getItem('inx-simple') === '1';
+    } catch (e) {
+        simpleMode = false;
+    }
+    applySimpleMode();
+}
+
+function setSimpleMode(on) {
+    simpleMode = !!on;
+    try {
+        localStorage.setItem('inx-simple', simpleMode ? '1' : '0');
+    } catch (e) {}
+    applySimpleMode();
+    if (simpleMode && currentTab === 'gallery') {
+        switchTab('live');
+    } else {
+        switchTab(currentTab);
     }
 }
 
@@ -1698,8 +1735,9 @@ if (DESKTOP_MQ.addEventListener) {
 
 initZoomGestures();
 initWheelNavigation();
+initSimpleMode();
 updateTabIndicator();
-switchTab('gallery');
+switchTab(simpleMode ? 'live' : 'gallery');
 connectWS();
 refreshSeeds();
 loadSettings();
