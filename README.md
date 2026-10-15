@@ -42,7 +42,7 @@ Watch generations happen live, start and stop runs, and edit your generation set
 - **Save image** / **Save all** (a `.zip` of the session).
 - **Reuse settings** — reads the settings baked into a generated PNG and loads them back into the panel.
 - **Copy prompt**, and an optional **Remove metadata** toggle so saved images don't carry your workflow.
-- **Upscale (1.5x / 2.0x)** — send the selected image through a **SeedVR2** workflow and insert the result right after it (requires the SeedVR2 extension — see [Upscaling](#upscaling-seedvr2)).
+- **Upscale (2.0x)** / **Upscale to 4K** — send the selected image through a **SeedVR2** workflow and insert the result right after it (requires the SeedVR2 extension — see [Upscaling](#upscaling-seedvr2)).
 
 **Nice to have**
 - **Simple Mode** — one switch hides everything except the live preview and the newest image, turning the panel into a clean, always-on *second display* for ComfyUI (this is basically the original purpose of the project, now provided as a toggle).
@@ -142,7 +142,7 @@ Browse every image generated this session. Use **Prev** / **Next** and the count
 
 ![Gallery tab showing a generated image](assets/gallery.png)
 
-The **↓ button** on the right opens the gallery actions: **Save Image**, **Save All** (a `.zip`), **Reuse Settings**, **Copy Prompt**, **Upscale (1.5x)** / **Upscale (2.0x)** (see [Upscaling](#upscaling-seedvr2)), a **Remove metadata** toggle, and **Delete Image** (removes the selected image from the gallery and disk). **Long-press the ↓ button** for quick access to **Save Image**, **Delete Image** and **Upscale (2.0x)** — a small pill of icons pops up above it; drag onto an icon (it grows) and release to trigger it, or lift your finger and tap one. Images that came out of the upscaler show an **Upscaled** badge — tapping it opens a before/after comparison of the original and the upscaled image. A second badge always shows the current image's **resolution** (e.g. `1920x1080`) — tap it to load that size into **Generation → Custom Size** (it asks for confirmation first).
+The **↓ button** on the right opens the gallery actions: **Save Image**, **Save All** (a `.zip`), **Reuse Settings**, **Copy Prompt**, **Upscale to 4K** / **Upscale (2.0x)** (see [Upscaling](#upscaling-seedvr2)), a **Remove metadata** toggle, and **Delete Image** (removes the selected image from the gallery and disk). **Long-press the ↓ button** for quick access to **Save Image**, **Delete Image** and **Upscale (2.0x)** — a small pill of icons pops up above it; drag onto an icon (it grows) and release to trigger it, or lift your finger and tap one. Images that came out of the upscaler show an **Upscaled** badge — tapping it opens a before/after comparison of the original and the upscaled image. A second badge always shows the current image's **resolution** (e.g. `1920x1080`) — tap it to load that size into **Generation → Custom Size** (it asks for confirmation first).
 
 ![Gallery actions menu](assets/gallery-actions.png)
 
@@ -168,21 +168,27 @@ At the bottom of the Settings tab: **Clear Images** (deletes every gallery image
 
 ## Upscaling (SeedVR2)
 
-The Gallery has **Upscale (1.5x)** and **Upscale (2.0x)** actions that send the selected image through a **SeedVR2** upscaling workflow and insert the result right after it. Upscaled images are marked with an **Upscaled** badge; tap the badge to compare the original and the result side by side.
+The Gallery has two upscale actions — **Upscale to 4K** and **Upscale (2.0x)** — that send the selected image through a **SeedVR2** upscaling workflow and insert the result right after it. Upscaled images are marked with an **Upscaled** badge; tap the badge to compare the original and the result side by side.
+
+Both options run on the **same SeedVR2 infrastructure** (the same `SeedVR2 Video Upscaler` / DiT / VAE nodes) — they only differ in the workflow file, the target size, and the **model used**: **Upscale to 4K** swaps in the larger, sharper **7B (`seedvr2_ema_7b_sharp`) model** for higher quality, while **Upscale (2.0x)** uses the lighter **3B** model for a faster, more modest 2× enlargement.
 
 > **Requirements — please read.**
-> - **The SeedVR2 extension must already be installed in ComfyUI** (the `seedvr2_videoupscaler` custom node). The bundled workflow uses its nodes (`SeedVR2 Video Upscaler`, `SeedVR2 (Down)Load DiT Model`, `SeedVR2 (Down)Load VAE Model`), so nothing will run without it.
-> - The feature reads **`upscaler_api.json`** from this custom node's folder — that's the upscaler workflow in **API format**, and it's what gets queued.
+> - **The SeedVR2 extension must already be installed in ComfyUI** (the `seedvr2_videoupscaler` custom node). Both bundled workflows use its nodes (`SeedVR2 Video Upscaler`, `SeedVR2 (Down)Load DiT Model`, `SeedVR2 (Down)Load VAE Model`), so nothing will run without it.
+> - The actions read two workflows in **API format** from this custom node's folder: **`upscaler_api.json`** for **Upscale (2.0x)** and **`4k_upscaler_api.json`** for **Upscale to 4K**.
 >
-> **Custom upscaling workflows are not supported.** Building your own workflow (or editing node types/titles in `upscaler_api.json`) is unsupported and will likely not work without changing this extension's code — the panel expects the shipped structure: a `LoadImage` node for the input, a `PreviewImage` node for the output, and the SeedVR2 nodes. The **default `upscaler_api.json` works out of the box with SeedVR2.**
+> **Custom upscaling workflows are not supported.** Building your own workflow (or editing node types/titles in these files) is unsupported and will likely not work without changing this extension's code — the panel expects the shipped structure: a `LoadImage` node for the input, a `PreviewImage` node for the output, and the SeedVR2 nodes. The **default files work out of the box with SeedVR2.**
 
 **How it works**
-1. Open the gallery actions (**↓**) and tap **Upscale (1.5x)** or **Upscale (2.0x)**.
-2. The panel copies the selected image into ComfyUI's `input/` folder, swaps it into the workflow's `Load Image` node, sets the target size multiplier, and queues the workflow — `min(width, height) × 1.5` or `× 2`, `batch_size` 1, and a fixed seed, exactly as configured in the default file.
+1. Open the gallery actions (**↓**) and tap **Upscale to 4K** or **Upscale (2.0x)**.
+2. The panel copies the selected image into ComfyUI's `input/` folder, swaps it into the workflow's `Load Image` node, and queues the workflow.
+   - **Upscale (2.0x)** targets `min(width, height) × 2` (the multiplier is written into the workflow's math node).
+   - **Upscale to 4K** targets a **2160px shortest edge** (SeedVR2 preserves the aspect ratio) using the **7B sharp** model, for a sharper, higher-quality result.
 3. While it runs you **can't queue anything else** (Run / Run (Instant) are disabled until it finishes).
 4. When it's done, the upscaled image is inserted **immediately after the original** and the panel jumps to it.
 
-The default workflow loads `seedvr2_ema_3b_fp8_e4m3fn.safetensors` (DiT) and `ema_vae_fp16.safetensors` (VAE), so those model files must be present.
+**Models required** (both must be present for their button to actually run):
+- **Upscale (2.0x):** `seedvr2_ema_3b_fp8_e4m3fn.safetensors` (DiT) + `ema_vae_fp16.safetensors` (VAE).
+- **Upscale to 4K:** `seedvr2_ema_7b_sharp_fp8_e4m3fn_mixed_block35_fp16.safetensors` (DiT) + `ema_vae_fp16.safetensors` (VAE).
 
 ---
 
@@ -191,7 +197,7 @@ The default workflow loads `seedvr2_ema_3b_fp8_e4m3fn.safetensors` (DiT) and `em
 - **Live preview needs a preview method.** Start ComfyUI with `--preview-method latent2rgb` or `taesd`.
 - **Seed control is opt-in.** The Seed section only shows up when you use the [`Seed (rgthree)`](https://github.com/rgthree/rgthree-comfy) node. Other seed inputs are left untouched.
 - **Run the workflow once from ComfyUI first** so the panel can capture it for remote runs.
-- **Upscaling is SeedVR2-only.** The **Upscale (1.5x)** / **Upscale (2.0x)** actions require the `seedvr2_videoupscaler` extension and the bundled `upscaler_api.json`; custom upscaler workflows aren't supported. See [Upscaling (SeedVR2)](#upscaling-seedvr2).
+- **Upscaling is SeedVR2-only.** The **Upscale to 4K** / **Upscale (2.0x)** actions both run on SeedVR2 and require the `seedvr2_videoupscaler` extension plus the bundled `upscaler_api.json` (2.0x) and `4k_upscaler_api.json` (4K). The 4K option uses the higher-quality **7B sharp** model; custom upscaler workflows aren't supported. See [Upscaling (SeedVR2)](#upscaling-seedvr2).
 - **Images persist on disk.** They live in `custom_nodes/comfyui-lan-image-server/temp/` and are reloaded on startup, so your gallery survives restarts. Use **Delete Image** for a single image or **Clear Images** to wipe them all (both delete the files).
 - **Presets are just files.** They live as JSON in `custom_nodes/comfyui-lan-image-server/presets/`, so they survive restarts and are easy to copy or back up. That folder is gitignored, so your presets aren't committed.
 - **Only your changes are stored.** Anything you set to the node's default value is treated as "default" rather than an override, so the panel only carries what you actually changed.
