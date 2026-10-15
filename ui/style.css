@@ -290,6 +290,14 @@ body {
     will-change: transform;
 }
 
+.swipe-ghost {
+    position: absolute;
+    pointer-events: none;
+    z-index: 1;
+    object-fit: contain;
+    will-change: transform;
+}
+
 #status {
     position: absolute;
     top: 12px;

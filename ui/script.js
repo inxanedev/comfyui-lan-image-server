@@ -58,6 +58,7 @@ let zoomScale = 1;
 let zoomTx = 0;
 let zoomTy = 0;
 let gesture = null;
+let galleryAnim = null;
 
 const IMAGE_CACHE_LIMIT = 24;
 const imageCache = new Map();
@@ -939,7 +940,42 @@ function formatMP(mp) {
     return String(Math.round(Number(mp) * 10) / 10);
 }
 
-async function updateGalleryImage() {
+function animateGallerySlide(direction, previousSrc, previousRect) {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const width = viewer.clientWidth || 300;
+    const duration = 220;
+    const easing = 'cubic-bezier(0.22, 1, 0.36, 1)';
+
+    // Slide the outgoing image away with a temporary ghost layer.
+    if (previousSrc && previousRect) {
+        const viewerRect = viewer.getBoundingClientRect();
+        const ghost = document.createElement('img');
+        ghost.className = 'swipe-ghost';
+        ghost.src = previousSrc;
+        ghost.style.left = (previousRect.left - viewerRect.left) + 'px';
+        ghost.style.top = (previousRect.top - viewerRect.top) + 'px';
+        ghost.style.width = previousRect.width + 'px';
+        ghost.style.height = previousRect.height + 'px';
+        viewer.appendChild(ghost);
+
+        const ghostAnim = ghost.animate(
+            [{ transform: 'translateX(0)' }, { transform: `translateX(${-direction * width}px)` }],
+            { duration: duration, easing: easing }
+        );
+        ghostAnim.onfinish = () => ghost.remove();
+        setTimeout(() => ghost.remove(), duration + 200);
+    }
+
+    // Slide the incoming image into view.
+    if (galleryAnim) galleryAnim.cancel();
+    galleryAnim = img.animate(
+        [{ transform: `translateX(${direction * width}px)` }, { transform: 'translateX(0)' }],
+        { duration: duration, easing: easing }
+    );
+}
+
+async function updateGalleryImage(slideDirection) {
     if (totalImages === 0) {
         img.style.display = 'none';
         placeholder.style.display = 'block';
@@ -973,11 +1009,14 @@ async function updateGalleryImage() {
     try {
         const url = await loadImageUrl(index);
         if (token !== galleryLoadToken) return;
+        const previousSrc = (img.style.display !== 'none' && img.src) ? img.src : null;
+        const previousRect = previousSrc ? img.getBoundingClientRect() : null;
         placeholder.style.display = 'none';
         img.style.display = 'block';
         img.src = url;
         displayedImageKey = key;
         activeImageKey = `${imageEpoch}:${index}`;
+        if (slideDirection) animateGallerySlide(slideDirection, previousSrc, previousRect);
         prefetchImage(index - 1);
         prefetchImage(index + 1);
     } catch (e) {
@@ -1006,7 +1045,7 @@ function navigate(delta) {
     const newIndex = currentIndex + delta;
     if (newIndex >= 1 && newIndex <= totalImages) {
         currentIndex = newIndex;
-        updateGalleryImage();
+        updateGalleryImage(delta);
     }
 }
 
