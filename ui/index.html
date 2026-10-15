@@ -50,52 +50,23 @@
     </main>
 
     <section id="promptContainer">
-        <div class="acc-item" data-acc="prompt" id="promptSection">
-            <button class="acc-header" type="button" aria-expanded="false" onclick="toggleAccordion('prompt')">
-                <span class="acc-title">Prompt</span>
-                <span id="promptBadge" class="badge">Default</span>
+        <div class="acc-item" data-acc="generation" id="generationSection">
+            <button class="acc-header" type="button" aria-expanded="false" onclick="toggleAccordion('generation')">
+                <span class="acc-title">Generation</span>
+                <span id="genBadge" class="badge">Default</span>
                 <svg class="acc-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
             </button>
             <div class="acc-body">
                 <div class="acc-body-inner">
-                    <div id="defaultPromptBox">
-                        <div id="defaultPromptTitle">Workflow Default</div>
-                        <div id="defaultPromptText"></div>
-                    </div>
-                    <textarea id="promptInput" placeholder="Enter custom prompt text here..."></textarea>
-                    <div class="prompt-actions">
-                        <button id="revertBtn" class="btn" onclick="revertText()" style="flex: 1;" disabled>Revert to default</button>
-                        <button id="saveBtn" class="btn btn-save" onclick="saveText()" style="flex: 1;">Save</button>
-                    </div>
-                    <div id="promptNotice"></div>
-                </div>
-            </div>
-        </div>
+                    <label class="field-label" for="genText">Prompt</label>
+                    <textarea id="genText" class="gen-textarea" placeholder="Positive prompt..." oninput="onSettingsChange()"></textarea>
 
-        <div class="acc-item" id="seedSection" data-acc="seed">
-            <button class="acc-header" type="button" aria-expanded="false" onclick="toggleAccordion('seed')">
-                <span class="acc-title">Seed (rgthree)</span>
-                <span id="seedBadge" class="badge">Default</span>
-                <svg class="acc-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
-            </button>
-            <div class="acc-body">
-                <div class="acc-body-inner">
-                    <div id="seedList" class="seed-list"></div>
-                </div>
-            </div>
-        </div>
+                    <label class="field-label" for="genNegative">Negative Prompt</label>
+                    <textarea id="genNegative" class="gen-textarea" placeholder="Negative prompt..." oninput="onSettingsChange()"></textarea>
 
-        <div class="acc-item" data-acc="resolution" id="resolutionSection">
-            <button class="acc-header" type="button" aria-expanded="false" onclick="toggleAccordion('resolution')">
-                <span class="acc-title">Resolution</span>
-                <span id="resBadge" class="badge">1:1 &middot; 1.5 MP</span>
-                <svg class="acc-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
-            </button>
-            <div class="acc-body">
-                <div class="acc-body-inner">
+                    <label class="field-label">Size</label>
                     <div class="res-field" id="resAutoFields">
-                        <label class="field-label" for="resAspect">Aspect Ratio</label>
-                        <select id="resAspect" class="select" onchange="onResolutionChange()">
+                        <select id="resAspect" class="select" onchange="onSettingsChange()">
                             <option value="1:1">1:1</option>
                             <option value="2:3">2:3</option>
                             <option value="3:2">3:2</option>
@@ -109,23 +80,53 @@
                             <label class="field-label" for="resMp">Megapixels</label>
                             <span id="resMpValue" class="field-value">1.5 MP</span>
                         </div>
-                        <input type="range" id="resMp" class="slider" min="0.5" max="2" step="0.5" value="1.5" oninput="onResolutionChange()">
+                        <input type="range" id="resMp" class="slider" min="0.5" max="2" step="0.5" value="1.5" oninput="onSettingsChange()">
                     </div>
-
                     <label class="checkbox-row">
-                        <input type="checkbox" id="resCustom" onchange="onResolutionChange()">
-                        <span>Custom</span>
+                        <input type="checkbox" id="resCustom" onchange="onSettingsChange()">
+                        <span>Custom size</span>
                     </label>
-
                     <div class="res-field" id="resCustomFields" style="display:none;">
                         <div class="res-wh-row">
-                            <input type="number" id="resWidth" class="res-input" min="16" max="8192" step="8" value="1224" oninput="onResolutionChange()" aria-label="Width">
+                            <input type="number" id="resWidth" class="res-input" min="16" max="8192" step="8" value="1224" oninput="onSettingsChange()" aria-label="Width">
                             <span class="res-times">&times;</span>
-                            <input type="number" id="resHeight" class="res-input" min="16" max="8192" step="8" value="1224" oninput="onResolutionChange()" aria-label="Height">
+                            <input type="number" id="resHeight" class="res-input" min="16" max="8192" step="8" value="1224" oninput="onSettingsChange()" aria-label="Height">
+                        </div>
+                    </div>
+                    <div class="res-preview">Size: <span id="resPreview">1224x1224 px</span></div>
+
+                    <div class="gen-grid">
+                        <div class="gen-field">
+                            <label class="field-label" for="genSteps">Steps</label>
+                            <input type="number" id="genSteps" class="res-input" min="1" max="10000" step="1" value="20" oninput="onSettingsChange()">
+                        </div>
+                        <div class="gen-field">
+                            <label class="field-label" for="genCfg">CFG</label>
+                            <input type="number" id="genCfg" class="res-input" min="0" max="100" step="0.1" value="7" oninput="onSettingsChange()">
                         </div>
                     </div>
 
-                    <div class="res-preview">Preview: <span id="resPreview">1224x1224 px</span></div>
+                    <label class="field-label" for="genSampler">Sampler</label>
+                    <select id="genSampler" class="select" onchange="onSettingsChange()"></select>
+
+                    <label class="field-label" for="genScheduler">Scheduler</label>
+                    <select id="genScheduler" class="select" onchange="onSettingsChange()"></select>
+
+                    <button id="genResetBtn" class="btn" type="button" onclick="revertSettings()">Reset to defaults</button>
+                    <div id="genNotice" class="gen-notice"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="acc-item" id="seedSection" data-acc="seed">
+            <button class="acc-header" type="button" aria-expanded="false" onclick="toggleAccordion('seed')">
+                <span class="acc-title">Seed (rgthree)</span>
+                <span id="seedBadge" class="badge">Default</span>
+                <svg class="acc-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+            </button>
+            <div class="acc-body">
+                <div class="acc-body-inner">
+                    <div id="seedList" class="seed-list"></div>
                 </div>
             </div>
         </div>

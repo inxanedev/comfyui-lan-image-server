@@ -418,8 +418,10 @@ body {
 }
 
 .acc-item.open .acc-body {
-    max-height: 78vh;
+    max-height: 80vh;
     opacity: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .acc-body-inner {
@@ -807,6 +809,52 @@ body {
     color: var(--text);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+}
+
+.gen-textarea {
+    width: 100%;
+    min-height: 84px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid var(--glass-border);
+    background: var(--field-bg);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.5s ease;
+}
+
+.gen-textarea::placeholder {
+    color: var(--text-faint);
+}
+
+.gen-textarea:focus {
+    border-color: var(--accent-border);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.gen-grid {
+    display: flex;
+    gap: 10px;
+}
+
+.gen-field {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.gen-notice {
+    min-height: 16px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
 }
 
 .btn.clear-btn {

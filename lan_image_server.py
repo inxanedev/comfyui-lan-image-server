@@ -18,6 +18,7 @@ from aiohttp import web
 from server import PromptServer
 
 import folder_paths
+import comfy.samplers
 
 # Directory configuration
 NODE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -29,9 +30,6 @@ CONNECTED_WEBSOCKETS = set()
 HISTORY_FILES = []
 HISTORY_EPOCH = uuid.uuid4().hex
 SERVER_INITIALIZED = False
-DEFAULT_TEXT = ""
-CUSTOM_TEXT = None
-TEXT_REVISION = 0
 
 LAST_PROMPT_INFO = None
 LOOP_ACTIVE = False
@@ -43,7 +41,21 @@ RGTHREE_SEED_MAX = 1125899906842624
 SEED_OVERRIDES = {}
 SKIP_NEXT_CAPTURE = False
 
-# Resolution settings (Serve Resolution on LAN)
+# Generation settings (Fetch Generation Settings on LAN)
+SAMPLERS = list(comfy.samplers.KSampler.SAMPLERS)
+SCHEDULERS = list(comfy.samplers.KSampler.SCHEDULERS)
+GENERATION_DEFAULTS = {
+    "text": "",
+    "negative": "",
+    "steps": 20,
+    "cfg": 7.0,
+    "sampler_name": SAMPLERS[0] if SAMPLERS else "euler",
+    "scheduler": SCHEDULERS[0] if SCHEDULERS else "normal",
+}
+GENERATION_OVERRIDES = {}
+SETTINGS_REVISION = 0
+
+# Resolution settings (part of the generation settings)
 ASPECT_RATIOS = {
     "1:1": (1, 1),
     "2:3": (2, 3),
@@ -59,7 +71,6 @@ RES_MEGAPIXELS = 1.5
 RES_CUSTOM = False
 RES_CUSTOM_WIDTH = 1224
 RES_CUSTOM_HEIGHT = 1224
-RESOLUTION_REVISION = 0
 
 def ensure_clean_temp_dir():
     """Clears the temp directory when the server starts for the first time."""
@@ -301,6 +312,35 @@ def resolution_state():
         "height": RES_CUSTOM_HEIGHT,
         "effective_width": width,
         "effective_height": height,
+    }
+
+
+def get_effective_settings():
+    width, height = get_effective_resolution()
+
+    def eff(key):
+        return GENERATION_OVERRIDES.get(key, GENERATION_DEFAULTS.get(key))
+
+    return {
+        "text": str(eff("text") or ""),
+        "negative": str(eff("negative") or ""),
+        "width": width,
+        "height": height,
+        "steps": int(eff("steps")),
+        "cfg": float(eff("cfg")),
+        "sampler_name": eff("sampler_name"),
+        "scheduler": eff("scheduler"),
+    }
+
+
+def settings_state():
+    return {
+        "defaults": GENERATION_DEFAULTS,
+        "overrides": GENERATION_OVERRIDES,
+        "effective": get_effective_settings(),
+        "resolution": resolution_state(),
+        "samplers": SAMPLERS,
+        "schedulers": SCHEDULERS,
     }
 
 
@@ -548,12 +588,9 @@ async def handle_ws(request):
         "type": "init",
         "total": len(HISTORY_FILES),
         "epoch": HISTORY_EPOCH,
-        "default_text": DEFAULT_TEXT,
-        "custom_text": CUSTOM_TEXT,
-        "is_custom": CUSTOM_TEXT is not None,
         "loop_active": LOOP_ACTIVE,
         "seeds": get_seed_nodes(),
-        "resolution": resolution_state()
+        "settings": settings_state()
     })
 
     try:
@@ -645,65 +682,85 @@ async def handle_cancel(request):
     return web.json_response({"status": "cancelled", "loop_active": False})
 
 
-@PromptServer.instance.routes.get("/inx/text")
-async def handle_get_text(request):
-    return web.json_response({
-        "default_text": DEFAULT_TEXT,
-        "custom_text": CUSTOM_TEXT,
-        "effective_text": CUSTOM_TEXT if CUSTOM_TEXT is not None else DEFAULT_TEXT,
-        "is_custom": CUSTOM_TEXT is not None
-    })
+@PromptServer.instance.routes.get("/inx/settings")
+async def handle_get_settings(request):
+    return web.json_response(settings_state())
 
 
-@PromptServer.instance.routes.post("/inx/text")
-async def handle_post_text(request):
-    global CUSTOM_TEXT, TEXT_REVISION
+@PromptServer.instance.routes.post("/inx/settings")
+async def handle_post_settings(request):
+    global RES_ASPECT, RES_MEGAPIXELS, RES_CUSTOM, RES_CUSTOM_WIDTH, RES_CUSTOM_HEIGHT, SETTINGS_REVISION
+
     try:
         data = await request.json()
-        text = data.get("text", "")
-        CUSTOM_TEXT = str(text)
-        TEXT_REVISION += 1
+    except Exception:
+        data = {}
 
-        payload = {
-            "type": "text_update",
-            "default_text": DEFAULT_TEXT,
-            "custom_text": CUSTOM_TEXT,
-            "effective_text": CUSTOM_TEXT,
-            "is_custom": True
-        }
-
-        for ws in list(CONNECTED_WEBSOCKETS):
+    for key in ("text", "negative", "steps", "cfg", "sampler_name", "scheduler"):
+        if key not in data:
+            continue
+        value = data[key]
+        if value is None:
+            GENERATION_OVERRIDES.pop(key, None)
+        elif key == "steps":
             try:
-                await ws.send_json(payload)
-            except Exception:
+                GENERATION_OVERRIDES["steps"] = max(1, min(10000, int(value)))
+            except (TypeError, ValueError):
                 pass
+        elif key == "cfg":
+            try:
+                GENERATION_OVERRIDES["cfg"] = max(0.0, min(100.0, float(value)))
+            except (TypeError, ValueError):
+                pass
+        elif key == "sampler_name":
+            if value in SAMPLERS:
+                GENERATION_OVERRIDES["sampler_name"] = value
+        elif key == "scheduler":
+            if value in SCHEDULERS:
+                GENERATION_OVERRIDES["scheduler"] = value
+        else:
+            GENERATION_OVERRIDES[key] = str(value)
 
-        return web.json_response({"status": "saved", "is_custom": True})
-    except Exception as e:
-        return web.json_response({"status": "error", "message": str(e)}, status=400)
+    if "resolution" in data:
+        res = data["resolution"]
+        if res is None:
+            RES_ASPECT = "1:1"
+            RES_MEGAPIXELS = 1.5
+            RES_CUSTOM = False
+            RES_CUSTOM_WIDTH = 1224
+            RES_CUSTOM_HEIGHT = 1224
+        elif isinstance(res, dict):
+            if res.get("aspect") in ASPECT_RATIOS:
+                RES_ASPECT = res["aspect"]
+            if "megapixels" in res:
+                try:
+                    RES_MEGAPIXELS = max(0.1, min(8.0, float(res["megapixels"])))
+                except (TypeError, ValueError):
+                    pass
+            if "custom" in res:
+                RES_CUSTOM = bool(res["custom"])
+            if "width" in res:
+                try:
+                    RES_CUSTOM_WIDTH = max(16, min(8192, int(res["width"])))
+                except (TypeError, ValueError):
+                    pass
+            if "height" in res:
+                try:
+                    RES_CUSTOM_HEIGHT = max(16, min(8192, int(res["height"])))
+                except (TypeError, ValueError):
+                    pass
 
+    SETTINGS_REVISION += 1
 
-@PromptServer.instance.routes.post("/inx/revert_text")
-async def handle_revert_text(request):
-    global CUSTOM_TEXT, TEXT_REVISION
-    CUSTOM_TEXT = None
-    TEXT_REVISION += 1
-
-    payload = {
-        "type": "text_update",
-        "default_text": DEFAULT_TEXT,
-        "custom_text": None,
-        "effective_text": DEFAULT_TEXT,
-        "is_custom": False
-    }
-
+    state = settings_state()
+    payload = {"type": "settings_update", "settings": state}
     for ws in list(CONNECTED_WEBSOCKETS):
         try:
             await ws.send_json(payload)
         except Exception:
             pass
 
-    return web.json_response({"status": "reverted", "is_custom": False})
+    return web.json_response(state)
 
 
 @PromptServer.instance.routes.get("/inx/seed")
@@ -758,57 +815,6 @@ async def handle_post_seed(request):
     return web.json_response({"status": "ok", "seeds": seeds})
 
 
-@PromptServer.instance.routes.get("/inx/resolution")
-async def handle_get_resolution(request):
-    return web.json_response(resolution_state())
-
-
-@PromptServer.instance.routes.post("/inx/resolution")
-async def handle_post_resolution(request):
-    global RES_ASPECT, RES_MEGAPIXELS, RES_CUSTOM, RES_CUSTOM_WIDTH, RES_CUSTOM_HEIGHT, RESOLUTION_REVISION
-
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-
-    if data.get("aspect") in ASPECT_RATIOS:
-        RES_ASPECT = data["aspect"]
-
-    if "megapixels" in data:
-        try:
-            RES_MEGAPIXELS = max(0.1, min(8.0, float(data["megapixels"])))
-        except (TypeError, ValueError):
-            pass
-
-    if "custom" in data:
-        RES_CUSTOM = bool(data["custom"])
-
-    if "width" in data:
-        try:
-            RES_CUSTOM_WIDTH = max(16, min(8192, int(data["width"])))
-        except (TypeError, ValueError):
-            pass
-
-    if "height" in data:
-        try:
-            RES_CUSTOM_HEIGHT = max(16, min(8192, int(data["height"])))
-        except (TypeError, ValueError):
-            pass
-
-    RESOLUTION_REVISION += 1
-
-    state = resolution_state()
-    payload = {"type": "resolution_update", **state}
-    for ws in list(CONNECTED_WEBSOCKETS):
-        try:
-            await ws.send_json(payload)
-        except Exception:
-            pass
-
-    return web.json_response(state)
-
-
 def _do_shutdown():
     try:
         if os.name == "nt":
@@ -832,8 +838,8 @@ async def handle_shutdown(request):
 
 @PromptServer.instance.routes.post("/inx/kill_server")
 async def kill_server_endpoint(request):
-    global HISTORY_FILES, HISTORY_EPOCH, CUSTOM_TEXT, TEXT_REVISION
-    global RES_ASPECT, RES_MEGAPIXELS, RES_CUSTOM, RES_CUSTOM_WIDTH, RES_CUSTOM_HEIGHT, RESOLUTION_REVISION
+    global HISTORY_FILES, HISTORY_EPOCH, SETTINGS_REVISION
+    global RES_ASPECT, RES_MEGAPIXELS, RES_CUSTOM, RES_CUSTOM_WIDTH, RES_CUSTOM_HEIGHT
 
     for f in HISTORY_FILES:
         if os.path.exists(f):
@@ -845,27 +851,19 @@ async def kill_server_endpoint(request):
     HISTORY_EPOCH = uuid.uuid4().hex
 
     # Reset remote overrides so a fresh session never leaks settings into another workflow.
-    CUSTOM_TEXT = None
-    TEXT_REVISION += 1
+    GENERATION_OVERRIDES.clear()
     SEED_OVERRIDES.clear()
     RES_ASPECT = "1:1"
     RES_MEGAPIXELS = 1.5
     RES_CUSTOM = False
     RES_CUSTOM_WIDTH = 1224
     RES_CUSTOM_HEIGHT = 1224
-    RESOLUTION_REVISION += 1
+    SETTINGS_REVISION += 1
 
     payloads = [
         {"type": "cleared", "epoch": HISTORY_EPOCH},
-        {
-            "type": "text_update",
-            "default_text": DEFAULT_TEXT,
-            "custom_text": None,
-            "effective_text": DEFAULT_TEXT,
-            "is_custom": False
-        },
         {"type": "seed_update", "seeds": get_seed_nodes()},
-        {"type": "resolution_update", **resolution_state()},
+        {"type": "settings_update", "settings": settings_state()},
     ]
 
     for ws in list(CONNECTED_WEBSOCKETS):
@@ -996,32 +994,7 @@ class ServeImageLAN:
         return {"ui": {"images": preview_images}, "result": (images,)}
 
 
-class ServeResolutionLAN:
-    def __init__(self):
-        pass
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {}}
-
-    RETURN_TYPES = ("INT", "INT")
-    RETURN_NAMES = ("width", "height")
-    FUNCTION = "serve_resolution"
-    CATEGORY = "inx"
-    DESCRIPTION = "Outputs a width and height configured from the LAN web interface (aspect ratio + megapixels, or custom values)."
-
-    @classmethod
-    def IS_CHANGED(cls, **kwargs):
-        width, height = get_effective_resolution()
-        return (RESOLUTION_REVISION, width, height)
-
-    def serve_resolution(self):
-        width, height = get_effective_resolution()
-        print(f"\n[Serve Resolution on LAN] Outputting {width} x {height}\n")
-        return (width, height)
-
-
-class ServeTextLAN:
+class FetchGenerationSettingsLAN:
     def __init__(self):
         pass
 
@@ -1029,48 +1002,57 @@ class ServeTextLAN:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "default_text": ("STRING", {"default": "", "multiline": True}),
+                "default_text": ("STRING", {"default": "", "multiline": True, "tooltip": "Default positive prompt."}),
+                "default_negative": ("STRING", {"default": "", "multiline": True, "tooltip": "Default negative prompt."}),
+                "default_steps": ("INT", {"default": 20, "min": 1, "max": 10000, "tooltip": "Default sampling steps."}),
+                "default_cfg": ("FLOAT", {"default": 7.0, "min": 0.0, "max": 100.0, "step": 0.1, "tooltip": "Default CFG scale."}),
+                "default_sampler_name": (comfy.samplers.KSampler.SAMPLERS,),
+                "default_scheduler": (comfy.samplers.KSampler.SCHEDULERS,),
             }
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("text",)
-    FUNCTION = "serve_text"
+    RETURN_TYPES = ("STRING", "STRING", "INT", "INT", "INT", "FLOAT",
+                    comfy.samplers.KSampler.SAMPLERS, comfy.samplers.KSampler.SCHEDULERS)
+    RETURN_NAMES = ("text", "negative", "width", "height", "steps", "cfg", "sampler_name", "scheduler")
+    FUNCTION = "fetch"
     CATEGORY = "inx"
-    DESCRIPTION = "Outputs text that can be edited from the LAN web interface. Connect it to a CLIPTextEncode (or any text input) to change prompts remotely."
+    DESCRIPTION = "Outputs generation settings (prompt, negative, size, steps, cfg, sampler, scheduler) editable from the LAN web interface."
 
     @classmethod
-    def IS_CHANGED(cls, default_text="", **kwargs):
-        global TEXT_REVISION
-        return (str(default_text), str(CUSTOM_TEXT), TEXT_REVISION)
+    def IS_CHANGED(cls, **kwargs):
+        s = get_effective_settings()
+        return (SETTINGS_REVISION, s["text"], s["negative"], s["width"], s["height"],
+                s["steps"], s["cfg"], s["sampler_name"], s["scheduler"])
 
-    async def serve_text(self, default_text=""):
-        global DEFAULT_TEXT, CUSTOM_TEXT, TEXT_REVISION
-
+    def fetch(self, default_text="", default_negative="", default_steps=20, default_cfg=7.0,
+              default_sampler_name=None, default_scheduler=None):
         if isinstance(default_text, list):
             default_text = default_text[0] if default_text else ""
-        elif default_text is None:
-            default_text = ""
+        if isinstance(default_negative, list):
+            default_negative = default_negative[0] if default_negative else ""
 
-        if DEFAULT_TEXT != default_text:
-            DEFAULT_TEXT = default_text
-            TEXT_REVISION += 1
+        GENERATION_DEFAULTS["text"] = str(default_text or "")
+        GENERATION_DEFAULTS["negative"] = str(default_negative or "")
+        GENERATION_DEFAULTS["steps"] = int(default_steps)
+        GENERATION_DEFAULTS["cfg"] = float(default_cfg)
+        if default_sampler_name in SAMPLERS:
+            GENERATION_DEFAULTS["sampler_name"] = default_sampler_name
+        if default_scheduler in SCHEDULERS:
+            GENERATION_DEFAULTS["scheduler"] = default_scheduler
 
-        is_custom = (CUSTOM_TEXT is not None)
-        effective_text = CUSTOM_TEXT if is_custom else DEFAULT_TEXT
+        settings = get_effective_settings()
+        print(f"\n[Fetch Generation Settings on LAN] size={settings['width']}x{settings['height']} "
+              f"steps={settings['steps']} cfg={settings['cfg']} "
+              f"sampler={settings['sampler_name']} scheduler={settings['scheduler']}")
+        print(f" -> text: \"{settings['text'][:60]}\"\n")
 
-        preview_snippet = effective_text[:60] + ('...' if len(effective_text) > 60 else '')
-        print(f"\n[Serve Text on LAN] Outputting {'customized' if is_custom else 'default'} text:")
-        print(f" -> Text: \"{preview_snippet}\"\n")
-
-        payload = {
-            "type": "text_update",
-            "default_text": DEFAULT_TEXT,
-            "custom_text": CUSTOM_TEXT,
-            "effective_text": effective_text,
-            "is_custom": is_custom
-        }
-
-        broadcast_json(payload)
-
-        return (effective_text,)
+        return (
+            settings["text"],
+            settings["negative"],
+            settings["width"],
+            settings["height"],
+            settings["steps"],
+            settings["cfg"],
+            settings["sampler_name"],
+            settings["scheduler"],
+        )

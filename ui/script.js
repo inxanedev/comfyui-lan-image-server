@@ -11,13 +11,6 @@ const tabPrompt = document.getElementById('tabPrompt');
 const controls = document.getElementById('controls');
 
 const promptContainer = document.getElementById('promptContainer');
-const promptInput = document.getElementById('promptInput');
-const defaultPromptBox = document.getElementById('defaultPromptBox');
-const defaultPromptText = document.getElementById('defaultPromptText');
-const promptBadge = document.getElementById('promptBadge');
-const revertBtn = document.getElementById('revertBtn');
-const saveBtn = document.getElementById('saveBtn');
-const promptNotice = document.getElementById('promptNotice');
 
 const seedSection = document.getElementById('seedSection');
 const seedList = document.getElementById('seedList');
@@ -42,10 +35,10 @@ let totalImages = 0;
 let currentIndex = 0;
 let livePreviewUrl = null;
 
-let defaultText = '';
-let customText = null;
-let isCustom = false;
 let loopActive = false;
+let settingsData = { defaults: {}, overrides: {}, effective: {}, resolution: {}, samplers: [], schedulers: [] };
+let settingsDirty = false;
+let settingsTimer = null;
 
 let seedNodes = [];
 let progressValue = null;
@@ -343,8 +336,7 @@ function updateWorkflowUI(data) {
 }
 
 async function runOnce() {
-    await flushResolution();
-    await flushText();
+    await flushSettings();
     setProgress(null);
     runBtn.disabled = true;
     status.textContent = 'Queuing run...';
@@ -386,8 +378,7 @@ async function toggleLoop() {
             loopBtn.disabled = false;
         }
     } else {
-        await flushResolution();
-        await flushText();
+        await flushSettings();
         setProgress(null);
         loopBtn.disabled = true;
         status.textContent = 'Starting loop...';
@@ -441,88 +432,192 @@ async function cancelExecution() {
     }
 }
 
-function updatePromptUI(data) {
-    if (data.default_text !== undefined) defaultText = data.default_text || '';
-    if (data.custom_text !== undefined) customText = data.custom_text;
-    isCustom = (customText !== null && customText !== undefined);
+/* ---------- Generation settings ---------- */
 
-    defaultPromptText.textContent = defaultText;
-
-    if (isCustom) {
-        promptBadge.textContent = 'Customized';
-        promptBadge.classList.add('badge-custom');
-        defaultPromptBox.style.display = defaultText ? 'block' : 'none';
-        revertBtn.disabled = false;
-    } else {
-        promptBadge.textContent = 'Default';
-        promptBadge.classList.remove('badge-custom');
-        defaultPromptBox.style.display = 'none';
-        revertBtn.disabled = true;
-    }
-
-    if (document.activeElement !== promptInput) {
-        promptInput.value = isCustom ? customText : defaultText;
+function setSettingOptions(el, values) {
+    if (!el || !Array.isArray(values) || el.options.length === values.length) return;
+    el.innerHTML = '';
+    for (const value of values) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        el.appendChild(option);
     }
 }
 
-async function saveText() {
-    const text = promptInput.value;
-    saveBtn.disabled = true;
-    promptNotice.textContent = 'Saving...';
-    promptNotice.style.color = '#aaa';
+function applySettingsState(state) {
+    if (!state) return;
+    settingsData = state;
+    const effective = state.effective || {};
+    const resolution = state.resolution || {};
 
+    setSettingOptions(document.getElementById('genSampler'), state.samplers);
+    setSettingOptions(document.getElementById('genScheduler'), state.schedulers);
+
+    const genText = document.getElementById('genText');
+    const genNegative = document.getElementById('genNegative');
+    const genSteps = document.getElementById('genSteps');
+    const genCfg = document.getElementById('genCfg');
+    const samplerEl = document.getElementById('genSampler');
+    const schedulerEl = document.getElementById('genScheduler');
+    const aspectEl = document.getElementById('resAspect');
+    const mpEl = document.getElementById('resMp');
+    const customEl = document.getElementById('resCustom');
+    const wEl = document.getElementById('resWidth');
+    const hEl = document.getElementById('resHeight');
+
+    if (genText && document.activeElement !== genText) genText.value = effective.text || '';
+    if (genNegative && document.activeElement !== genNegative) genNegative.value = effective.negative || '';
+    if (genSteps && document.activeElement !== genSteps) genSteps.value = String(effective.steps != null ? effective.steps : 20);
+    if (genCfg && document.activeElement !== genCfg) genCfg.value = String(effective.cfg != null ? effective.cfg : 7);
+    if (samplerEl) samplerEl.value = effective.sampler_name;
+    if (schedulerEl) schedulerEl.value = effective.scheduler;
+    if (aspectEl) aspectEl.value = resolution.aspect || '1:1';
+    if (mpEl) mpEl.value = String(resolution.megapixels != null ? resolution.megapixels : 1.5);
+    if (customEl) customEl.checked = !!resolution.custom;
+    if (wEl && document.activeElement !== wEl) wEl.value = String(resolution.width != null ? resolution.width : 1224);
+    if (hEl && document.activeElement !== hEl) hEl.value = String(resolution.height != null ? resolution.height : 1224);
+
+    updateGenerationUI();
+}
+
+function updateGenerationUI() {
+    const customEl = document.getElementById('resCustom');
+    const autoFields = document.getElementById('resAutoFields');
+    const customFields = document.getElementById('resCustomFields');
+    const mpValue = document.getElementById('resMpValue');
+    const aspectEl = document.getElementById('resAspect');
+    const mpEl = document.getElementById('resMp');
+    const preview = document.getElementById('resPreview');
+    const badge = document.getElementById('genBadge');
+
+    const custom = customEl ? customEl.checked : false;
+    let width;
+    let height;
+    if (custom) {
+        const wEl = document.getElementById('resWidth');
+        const hEl = document.getElementById('resHeight');
+        width = clampInt(wEl ? wEl.value : 1224, 16, 8192);
+        height = clampInt(hEl ? hEl.value : 1224, 16, 8192);
+    } else {
+        const aspect = aspectEl ? aspectEl.value : '1:1';
+        const mp = mpEl ? Number(mpEl.value) : 1.5;
+        const computed = computeResolutionLocal(aspect, mp);
+        width = computed[0];
+        height = computed[1];
+        if (mpValue) mpValue.textContent = formatMP(mp) + ' MP';
+    }
+
+    if (autoFields) autoFields.style.display = custom ? 'none' : 'flex';
+    if (customFields) customFields.style.display = custom ? 'flex' : 'none';
+    if (preview) preview.textContent = width + 'x' + height + ' px';
+
+    if (badge) {
+        const overridden = settingsData && settingsData.overrides && Object.keys(settingsData.overrides).length > 0;
+        badge.textContent = overridden ? 'Overridden' : 'Default';
+        badge.classList.toggle('badge-custom', !!overridden);
+    }
+}
+
+function collectSettings() {
+    const defaults = (settingsData && settingsData.defaults) || {};
+    const genText = document.getElementById('genText');
+    const genNegative = document.getElementById('genNegative');
+    const genSteps = document.getElementById('genSteps');
+    const genCfg = document.getElementById('genCfg');
+    const samplerEl = document.getElementById('genSampler');
+    const schedulerEl = document.getElementById('genScheduler');
+    const aspectEl = document.getElementById('resAspect');
+    const mpEl = document.getElementById('resMp');
+    const customEl = document.getElementById('resCustom');
+    const wEl = document.getElementById('resWidth');
+    const hEl = document.getElementById('resHeight');
+
+    // Only send values that differ from the workflow defaults; matching ones revert to default.
+    const payload = {};
+    const text = genText ? genText.value : '';
+    payload.text = text === (defaults.text || '') ? null : text;
+    const negative = genNegative ? genNegative.value : '';
+    payload.negative = negative === (defaults.negative || '') ? null : negative;
+    const steps = genSteps ? parseInt(genSteps.value, 10) : null;
+    payload.steps = (Number.isFinite(steps) && steps !== Number(defaults.steps)) ? steps : null;
+    const cfg = genCfg ? parseFloat(genCfg.value) : null;
+    payload.cfg = (Number.isFinite(cfg) && cfg !== Number(defaults.cfg)) ? cfg : null;
+    payload.sampler_name = (samplerEl && samplerEl.value !== defaults.sampler_name) ? samplerEl.value : null;
+    payload.scheduler = (schedulerEl && schedulerEl.value !== defaults.scheduler) ? schedulerEl.value : null;
+
+    const isDefaultRes = !customEl.checked && aspectEl.value === '1:1' && Number(mpEl.value) === 1.5;
+    payload.resolution = isDefaultRes ? null : {
+        aspect: aspectEl.value,
+        megapixels: Number(mpEl.value),
+        custom: customEl.checked,
+        width: clampInt(wEl.value, 16, 8192),
+        height: clampInt(hEl.value, 16, 8192)
+    };
+    return payload;
+}
+
+function onSettingsChange() {
+    settingsDirty = true;
+    updateGenerationUI();
+    if (settingsTimer) clearTimeout(settingsTimer);
+    settingsTimer = setTimeout(() => {
+        settingsTimer = null;
+        postSettings();
+    }, 350);
+}
+
+async function postSettings() {
     try {
-        const resp = await fetch('/inx/text', {
+        const resp = await fetch('/inx/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text })
+            body: JSON.stringify(collectSettings())
         });
-        if (!resp.ok) throw new Error('Save failed');
-        customText = text;
-        isCustom = true;
-        updatePromptUI({ default_text: defaultText, custom_text: customText });
-        promptNotice.textContent = 'Saved! ComfyUI will use this text.';
-        promptNotice.style.color = '#4CAF50';
-        setTimeout(() => {
-            if (promptNotice.textContent.startsWith('Saved')) promptNotice.textContent = '';
-        }, 3000);
-    } catch (e) {
-        promptNotice.textContent = 'Error saving text.';
-        promptNotice.style.color = '#F44336';
-    } finally {
-        saveBtn.disabled = false;
-    }
+        const data = await resp.json();
+        settingsDirty = false;
+        applySettingsState(data);
+    } catch (e) {}
 }
 
-async function revertText() {
-    revertBtn.disabled = true;
-    promptNotice.textContent = 'Reverting...';
-    promptNotice.style.color = '#aaa';
+async function flushSettings() {
+    if (!settingsDirty) return;
+    if (settingsTimer) {
+        clearTimeout(settingsTimer);
+        settingsTimer = null;
+    }
+    await postSettings();
+}
 
+async function loadSettings() {
     try {
-        const resp = await fetch('/inx/revert_text', { method: 'POST' });
-        if (!resp.ok) throw new Error('Revert failed');
-        customText = null;
-        isCustom = false;
-        promptInput.value = defaultText;
-        updatePromptUI({ default_text: defaultText, custom_text: null });
-        promptNotice.textContent = 'Reverted to workflow default.';
-        promptNotice.style.color = '#4CAF50';
-        setTimeout(() => {
-            if (promptNotice.textContent.startsWith('Reverted')) promptNotice.textContent = '';
-        }, 3000);
-    } catch (e) {
-        promptNotice.textContent = 'Error reverting text.';
-        promptNotice.style.color = '#F44336';
-        revertBtn.disabled = false;
-    }
+        const resp = await fetch('/inx/settings');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        applySettingsState(data);
+    } catch (e) {}
 }
 
-async function flushText() {
-    if (!promptInput) return;
-    const current = isCustom ? (customText || '') : (defaultText || '');
-    if (promptInput.value === current) return;
-    await saveText();
+async function revertSettings() {
+    try {
+        const resp = await fetch('/inx/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: null, negative: null, steps: null, cfg: null,
+                sampler_name: null, scheduler: null, resolution: null
+            })
+        });
+        const data = await resp.json();
+        settingsDirty = false;
+        applySettingsState(data);
+        const notice = document.getElementById('genNotice');
+        if (notice) {
+            notice.textContent = 'Reset to defaults';
+            notice.style.color = '#4CAF50';
+            setTimeout(() => { if (notice.textContent === 'Reset to defaults') notice.textContent = ''; }, 2500);
+        }
+    } catch (e) {}
 }
 
 async function refreshSeeds() {
@@ -674,13 +769,6 @@ const RES_ASPECTS = {
     '4:3': [4, 3], '9:16': [9, 16], '16:9': [16, 9], '21:9': [21, 9]
 };
 
-let resState = {
-    aspect: '1:1', megapixels: 1.5, custom: false,
-    width: 1224, height: 1224, effective_width: 1224, effective_height: 1224
-};
-let resDirty = false;
-let resPostTimer = null;
-
 function resRound8(x) {
     return Math.max(8, Math.round(x / 8) * 8);
 }
@@ -703,124 +791,6 @@ function clampInt(value, min, max) {
 
 function formatMP(mp) {
     return String(Math.round(Number(mp) * 10) / 10);
-}
-
-function applyResolutionState(data) {
-    if (!data) return;
-    if (data.aspect !== undefined) resState.aspect = data.aspect;
-    if (data.megapixels !== undefined) resState.megapixels = Number(data.megapixels);
-    if (data.custom !== undefined) resState.custom = !!data.custom;
-    if (data.width !== undefined) resState.width = Number(data.width);
-    if (data.height !== undefined) resState.height = Number(data.height);
-    if (data.effective_width !== undefined) resState.effective_width = data.effective_width;
-    if (data.effective_height !== undefined) resState.effective_height = data.effective_height;
-
-    const aspectEl = document.getElementById('resAspect');
-    const mpEl = document.getElementById('resMp');
-    const customEl = document.getElementById('resCustom');
-    const wEl = document.getElementById('resWidth');
-    const hEl = document.getElementById('resHeight');
-
-    if (aspectEl) aspectEl.value = resState.aspect;
-    if (mpEl) mpEl.value = String(resState.megapixels);
-    if (customEl) customEl.checked = resState.custom;
-    if (wEl && document.activeElement !== wEl) wEl.value = String(resState.width);
-    if (hEl && document.activeElement !== hEl) hEl.value = String(resState.height);
-
-    updateResolutionUI();
-}
-
-function updateResolutionUI() {
-    const customEl = document.getElementById('resCustom');
-    const autoFields = document.getElementById('resAutoFields');
-    const customFields = document.getElementById('resCustomFields');
-    const mpValue = document.getElementById('resMpValue');
-    const aspectEl = document.getElementById('resAspect');
-    const mpEl = document.getElementById('resMp');
-    const badge = document.getElementById('resBadge');
-    const preview = document.getElementById('resPreview');
-
-    const custom = customEl ? customEl.checked : resState.custom;
-    let width;
-    let height;
-
-    if (custom) {
-        const wEl = document.getElementById('resWidth');
-        const hEl = document.getElementById('resHeight');
-        width = clampInt(wEl ? wEl.value : resState.width, 16, 8192);
-        height = clampInt(hEl ? hEl.value : resState.height, 16, 8192);
-    } else {
-        const aspect = aspectEl ? aspectEl.value : resState.aspect;
-        const mp = mpEl ? Number(mpEl.value) : resState.megapixels;
-        const computed = computeResolutionLocal(aspect, mp);
-        width = computed[0];
-        height = computed[1];
-        if (mpValue) mpValue.textContent = formatMP(mp) + ' MP';
-    }
-
-    if (autoFields) autoFields.style.display = custom ? 'none' : 'flex';
-    if (customFields) customFields.style.display = custom ? 'flex' : 'none';
-    if (preview) preview.textContent = width + 'x' + height + ' px';
-    if (badge) {
-        badge.textContent = custom
-            ? 'Custom'
-            : (aspectEl ? aspectEl.value : resState.aspect) + ' \u00b7 ' + formatMP(mpEl ? mpEl.value : resState.megapixels) + ' MP';
-    }
-}
-
-function onResolutionChange() {
-    resDirty = true;
-    updateResolutionUI();
-    if (resPostTimer) clearTimeout(resPostTimer);
-    resPostTimer = setTimeout(() => {
-        resPostTimer = null;
-        postResolution();
-    }, 220);
-}
-
-async function postResolution() {
-    const customEl = document.getElementById('resCustom');
-    const aspectEl = document.getElementById('resAspect');
-    const mpEl = document.getElementById('resMp');
-    const wEl = document.getElementById('resWidth');
-    const hEl = document.getElementById('resHeight');
-
-    const body = {
-        custom: customEl ? customEl.checked : false,
-        aspect: aspectEl ? aspectEl.value : '1:1',
-        megapixels: mpEl ? Number(mpEl.value) : 1.5,
-        width: wEl ? clampInt(wEl.value, 16, 8192) : 1224,
-        height: hEl ? clampInt(hEl.value, 16, 8192) : 1224
-    };
-
-    try {
-        const resp = await fetch('/inx/resolution', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        const data = await resp.json();
-        resDirty = false;
-        applyResolutionState(data);
-    } catch (e) {}
-}
-
-async function flushResolution() {
-    if (!resDirty) return;
-    if (resPostTimer) {
-        clearTimeout(resPostTimer);
-        resPostTimer = null;
-    }
-    await postResolution();
-}
-
-async function loadResolution() {
-    try {
-        const resp = await fetch('/inx/resolution');
-        if (!resp.ok) return;
-        const data = await resp.json();
-        applyResolutionState(data);
-    } catch (e) {}
 }
 
 async function updateGalleryImage() {
@@ -988,7 +958,6 @@ function connectWS() {
                     }
 
                     if (data.type === 'init') {
-                        updatePromptUI(data);
                         updateWorkflowUI(data);
                     }
 
@@ -998,15 +967,13 @@ function connectWS() {
                         refreshSeeds();
                     }
 
-                    if (data.resolution) {
-                        applyResolutionState(data.resolution);
+                    if (data.settings) {
+                        applySettingsState(data.settings);
                     }
-                } else if (data.type === 'text_update') {
-                    updatePromptUI(data);
                 } else if (data.type === 'seed_update') {
                     updateSeedUI(data);
-                } else if (data.type === 'resolution_update') {
-                    applyResolutionState(data);
+                } else if (data.type === 'settings_update') {
+                    applySettingsState(data.settings);
                 } else if (data.type === 'progress') {
                     if (data.value == null) {
                         setProgress(null);
@@ -1118,14 +1085,22 @@ async function reuseImageSettings() {
                 customEl.checked = true;
                 wEl.value = String(params.width);
                 hEl.value = String(params.height);
-                onResolutionChange();
                 applied.push('size');
             }
         }
         if (params.positive) {
-            promptInput.value = params.positive;
-            await saveText();
+            const genText = document.getElementById('genText');
+            if (genText) genText.value = params.positive;
             applied.push('prompt');
+        }
+        if (params.negative) {
+            const genNegative = document.getElementById('genNegative');
+            if (genNegative) genNegative.value = params.negative;
+        }
+        if (applied.length) {
+            settingsDirty = true;
+            updateGenerationUI();
+            await flushSettings();
         }
 
         status.textContent = applied.length ? `Loaded ${applied.join(', ')}` : 'No settings in image';
@@ -1239,9 +1214,5 @@ initZoomGestures();
 updateTabIndicator();
 switchTab('gallery');
 connectWS();
-fetch('/inx/text')
-    .then(r => r.json())
-    .then(data => updatePromptUI(data))
-    .catch(() => {});
 refreshSeeds();
-loadResolution();
+loadSettings();
