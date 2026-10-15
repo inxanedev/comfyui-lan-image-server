@@ -1710,6 +1710,11 @@ function connectWS() {
                             if (livePreviewOwned && livePreviewUrl && livePreviewUrl.startsWith('blob:')) {
                                 URL.revokeObjectURL(livePreviewUrl);
                             }
+                            // Discard any preview frame still queued in the background (where
+                            // requestAnimationFrame is paused) so it can't overwrite the
+                            // finished image once the tab is focused again.
+                            pendingPreview = null;
+                            previewRafScheduled = false;
                             livePreviewUrl = url;
                             livePreviewOwned = false;
                             activeImageKey = `${imageEpoch}:${finalIndex}`;
