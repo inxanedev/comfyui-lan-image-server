@@ -45,7 +45,7 @@
     <main id="viewer">
         <div id="status">Connecting...</div>
         <div id="progressPill">0 / 0</div>
-        <div id="upscaleBadge">Upscaled</div>
+        <div id="upscaleBadge" role="button" tabindex="0" title="Compare original vs upscaled" onclick="openComparison()">Upscaled</div>
         <img id="display" src="" alt="Served Image" style="display:none;">
         <div id="placeholder">No images available</div>
     </main>
@@ -198,6 +198,22 @@
             <button id="cancelBtn" class="btn btn-danger" onclick="cancelExecution()" style="flex: 1;">Cancel</button>
         </div>
     </footer>
+
+    <div id="compareOverlay" class="compare-overlay" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="compare-stage">
+            <div id="compareFrame" class="compare-frame">
+                <img id="compareBefore" class="compare-img" alt="Original image" draggable="false">
+                <img id="compareAfter" class="compare-img compare-after" alt="Upscaled image" draggable="false">
+                <span class="compare-tag compare-tag-left">Original</span>
+                <span class="compare-tag compare-tag-right">Upscaled</span>
+                <div id="compareDivider" class="compare-divider">
+                    <span class="compare-handle">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6l-4 6 4 6"></path><path d="M14 6l4 6-4 6"></path></svg>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div id="modal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
         <div class="modal-backdrop" onclick="onModalCancel()"></div>

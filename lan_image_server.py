@@ -778,6 +778,44 @@ async def handle_image(request):
         return web.Response(status=404, text="Image not found.")
 
 
+def _find_original_path(source_path):
+    """Given an upscaled gallery image, returns the path of its original (base, sub 0)."""
+    key = _image_key(os.path.basename(source_path))
+    if not key or key[1] <= 0:
+        return None
+    base = key[0]
+    for path in HISTORY_FILES:
+        if _image_key(os.path.basename(path)) == (base, 0):
+            return path
+    return None
+
+
+@PromptServer.instance.routes.get("/inx/image/original")
+async def handle_image_original(request):
+    """Returns the pre-upscale original for a gallery image (used by the comparison view)."""
+    if not HISTORY_FILES:
+        return web.Response(status=404, text="No images available.")
+    try:
+        idx = int(request.query.get("index", len(HISTORY_FILES) - 1))
+        filepath = HISTORY_FILES[idx]
+    except (IndexError, ValueError):
+        return web.Response(status=404, text="Image not found.")
+
+    original = _find_original_path(filepath)
+    if not original or not os.path.isfile(original):
+        return web.Response(status=404, text="Original not found.")
+
+    try:
+        with open(original, "rb") as f:
+            return web.Response(
+                body=f.read(),
+                content_type="image/png",
+                headers={"Cache-Control": "no-store"}
+            )
+    except OSError:
+        return web.Response(status=404, text="Original not found.")
+
+
 def _extract_image_params(filepath):
     """Best-effort extraction of generation settings from a PNG's embedded prompt."""
     result = {"seed": None, "width": None, "height": None, "positive": None, "negative": None}

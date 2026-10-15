@@ -32,6 +32,11 @@ const stripMetadata = document.getElementById('stripMetadata');
 const workflowBar = document.getElementById('workflowBar');
 const progressPill = document.getElementById('progressPill');
 const upscaleBadge = document.getElementById('upscaleBadge');
+const compareOverlay = document.getElementById('compareOverlay');
+const compareFrame = document.getElementById('compareFrame');
+const compareBefore = document.getElementById('compareBefore');
+const compareAfter = document.getElementById('compareAfter');
+const compareDivider = document.getElementById('compareDivider');
 const presetSelect = document.getElementById('presetSelect');
 const presetDeleteBtn = document.getElementById('presetDeleteBtn');
 const presetNotice = document.getElementById('presetNotice');
@@ -57,6 +62,12 @@ let upscalerAvailable = false;
 let upscaling = false;
 let upscaledIndices = new Set();
 let simpleMode = false;
+
+let compareOpen = false;
+let compareLoading = false;
+let compareDragging = false;
+let compareStart = null;
+let compareOriginalUrl = null;
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
@@ -1279,6 +1290,7 @@ function connectWS() {
                     updateWorkflowUI(data);
                 } else if (data.type === 'cleared') {
                     syncEpoch(data.epoch);
+                    closeComparison();
                     totalImages = 0;
                     currentIndex = 0;
                     upscaledIndices = new Set();
@@ -1424,6 +1436,125 @@ function updateUpscaleBadge() {
     if (!upscaleBadge) return;
     const show = currentTab === 'gallery' && totalImages > 0 && upscaledIndices.has(currentIndex - 1);
     upscaleBadge.classList.toggle('visible', show);
+}
+
+/* ---------- Before / after comparison ---------- */
+
+function setComparePos(percent) {
+    const pos = Math.max(0, Math.min(100, percent));
+    compareAfter.style.clipPath = `inset(0 0 0 ${pos}%)`;
+    compareDivider.style.left = `${pos}%`;
+}
+
+function updateCompareFromClientX(clientX) {
+    const rect = compareFrame.getBoundingClientRect();
+    if (!rect.width) return;
+    setComparePos(((clientX - rect.left) / rect.width) * 100);
+}
+
+async function openComparison() {
+    if (compareOpen || compareLoading) return;
+    if (currentTab !== 'gallery' || totalImages === 0) return;
+
+    const index = currentIndex - 1;
+    if (!upscaledIndices.has(index)) return;
+
+    compareLoading = true;
+    try {
+        const afterUrl = await loadImageUrl(index);
+        const resp = await fetch(`/inx/image/original?index=${index}`);
+        if (!resp.ok) throw new Error('original unavailable');
+        const originalUrl = URL.createObjectURL(await resp.blob());
+
+        compareOriginalUrl = originalUrl;
+        compareBefore.src = originalUrl;
+        compareAfter.src = afterUrl;
+        setComparePos(50);
+        closeSaveMenu();
+        compareOverlay.classList.add('open');
+        compareOverlay.setAttribute('aria-hidden', 'false');
+        compareOpen = true;
+        document.addEventListener('keydown', onCompareKeydown, true);
+    } catch (e) {
+        if (compareOriginalUrl) {
+            URL.revokeObjectURL(compareOriginalUrl);
+            compareOriginalUrl = null;
+        }
+        showAlert('The original image is no longer available.', 'Compare');
+    } finally {
+        compareLoading = false;
+    }
+}
+
+function closeComparison() {
+    if (!compareOpen) return;
+    compareOpen = false;
+    compareDragging = false;
+    compareStart = null;
+    compareOverlay.classList.remove('open');
+    compareOverlay.setAttribute('aria-hidden', 'true');
+    document.removeEventListener('keydown', onCompareKeydown, true);
+    compareBefore.removeAttribute('src');
+    compareAfter.removeAttribute('src');
+    if (compareOriginalUrl) {
+        URL.revokeObjectURL(compareOriginalUrl);
+        compareOriginalUrl = null;
+    }
+}
+
+function onCompareKeydown(e) {
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        closeComparison();
+    }
+}
+
+function initCompareGestures() {
+    if (!compareOverlay) return;
+
+    compareOverlay.addEventListener('pointerdown', (e) => {
+        if (!compareOpen) return;
+        const inFrame = compareFrame.contains(e.target);
+        compareStart = { x: e.clientX, y: e.clientY, moved: false, inFrame: inFrame };
+
+        if (inFrame) {
+            compareDragging = true;
+            try { compareOverlay.setPointerCapture(e.pointerId); } catch (err) {}
+            updateCompareFromClientX(e.clientX);
+            e.preventDefault();
+        }
+    });
+
+    compareOverlay.addEventListener('pointermove', (e) => {
+        if (!compareOpen || !compareStart) return;
+        if (Math.abs(e.clientX - compareStart.x) > 6 || Math.abs(e.clientY - compareStart.y) > 6) {
+            compareStart.moved = true;
+        }
+        if (compareDragging) {
+            e.preventDefault();
+            updateCompareFromClientX(e.clientX);
+        }
+    });
+
+    const endPointer = (e) => {
+        if (!compareOpen) return;
+        const started = compareStart;
+        const wasDragging = compareDragging;
+        compareDragging = false;
+        compareStart = null;
+        try { compareOverlay.releasePointerCapture(e.pointerId); } catch (err) {}
+
+        // A tap (not a drag) outside the image closes the view.
+        if (started && !wasDragging && !started.moved && !started.inFrame) {
+            closeComparison();
+        }
+    };
+
+    compareOverlay.addEventListener('pointerup', endPointer);
+    compareOverlay.addEventListener('pointercancel', () => {
+        compareDragging = false;
+        compareStart = null;
+    });
 }
 
 async function upscaleCurrentImage() {
@@ -1735,6 +1866,7 @@ if (DESKTOP_MQ.addEventListener) {
 
 initZoomGestures();
 initWheelNavigation();
+initCompareGestures();
 initSimpleMode();
 updateTabIndicator();
 switchTab(simpleMode ? 'live' : 'gallery');
