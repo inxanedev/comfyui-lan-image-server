@@ -1326,6 +1326,7 @@ async function deleteCurrentImage() {
 function updateUpscaleButton() {
     if (!upscaleBtn) return;
     upscaleBtn.disabled = (!upscalerAvailable || upscaling || totalImages === 0);
+    upscaleBtn.title = upscalerAvailable ? '' : 'Requires the SeedVR2 extension and upscaler_api.json';
 }
 
 function applyUpscaleState(data) {

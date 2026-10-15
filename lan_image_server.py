@@ -536,7 +536,22 @@ def _upscaler_loader_id(template):
 
 def _upscaler_ready():
     template = _load_upscaler_template()
-    return bool(template) and _upscaler_loader_id(template) is not None
+    if not template or _upscaler_loader_id(template) is None:
+        return False
+
+    # Every node type in the template must be registered (e.g. SeedVR2 installed).
+    try:
+        import nodes
+        registry = nodes.NODE_CLASS_MAPPINGS
+    except Exception:
+        return False
+
+    for node in template.values():
+        if isinstance(node, dict):
+            class_type = node.get("class_type")
+            if class_type and class_type not in registry:
+                return False
+    return True
 
 
 def _resolve_output_path(info):
