@@ -391,6 +391,32 @@ body {
     box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
 }
 
+#resBadge {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    z-index: 5;
+    display: none;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    background: var(--glass-bg-strong);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22), inset 0 1px 0 var(--glass-highlight);
+    backdrop-filter: blur(18px) saturate(180%);
+    -webkit-backdrop-filter: blur(18px) saturate(180%);
+    transition: background 0.5s ease, border-color 0.5s ease;
+}
+
+#resBadge.visible {
+    display: inline-flex;
+}
+
 /* ---------- Before / after comparison overlay ---------- */
 
 .compare-overlay {

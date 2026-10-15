@@ -40,6 +40,7 @@ const compareFrame = document.getElementById('compareFrame');
 const compareBefore = document.getElementById('compareBefore');
 const compareAfter = document.getElementById('compareAfter');
 const compareDivider = document.getElementById('compareDivider');
+const resBadge = document.getElementById('resBadge');
 const presetSelect = document.getElementById('presetSelect');
 const presetDeleteBtn = document.getElementById('presetDeleteBtn');
 const presetNotice = document.getElementById('presetNotice');
@@ -431,6 +432,7 @@ function switchTab(tab) {
 
     updateProgressUI();
     updateUpscaleBadge();
+    updateResBadge();
 }
 
 function updateWorkflowUI(data) {
@@ -1072,6 +1074,7 @@ async function updateGalleryImage(slideDirection) {
         copyPromptBtn.disabled = true;
         updateUpscaleButton();
         updateUpscaleBadge();
+        updateResBadge();
         displayedImageKey = null;
         return;
     }
@@ -1102,6 +1105,7 @@ async function updateGalleryImage(slideDirection) {
         img.src = url;
         displayedImageKey = key;
         activeImageKey = `${imageEpoch}:${index}`;
+        updateResBadge();
         if (slideDirection) animateGallerySlide(slideDirection, previousSrc, previousRect);
         prefetchImage(index - 1);
         prefetchImage(index + 1);
@@ -1110,6 +1114,7 @@ async function updateGalleryImage(slideDirection) {
         img.style.display = 'none';
         placeholder.style.display = 'block';
         placeholder.textContent = 'Image unavailable.';
+        updateResBadge();
     }
 }
 
@@ -1443,6 +1448,16 @@ function updateUpscaleBadge() {
     if (!upscaleBadge) return;
     const show = currentTab === 'gallery' && totalImages > 0 && upscaledIndices.has(currentIndex - 1);
     upscaleBadge.classList.toggle('visible', show);
+}
+
+function updateResBadge() {
+    if (!resBadge) return;
+    const show = currentTab === 'gallery' && totalImages > 0
+        && img.style.display !== 'none' && img.naturalWidth > 0 && img.naturalHeight > 0;
+    if (show) {
+        resBadge.textContent = `${img.naturalWidth}x${img.naturalHeight}`;
+    }
+    resBadge.classList.toggle('visible', show);
 }
 
 /* ---------- Before / after comparison ---------- */
@@ -1872,6 +1887,7 @@ if (DESKTOP_MQ.addEventListener) {
     DESKTOP_MQ.addListener(onLayoutChange);
 }
 
+img.addEventListener('load', updateResBadge);
 initZoomGestures();
 initWheelNavigation();
 initCompareGestures();
