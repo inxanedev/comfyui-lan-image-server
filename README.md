@@ -4,9 +4,17 @@ Turn any phone, tablet, or computer on your Wi-Fi into a **remote control for Co
 
 Watch generations happen live, start and stop runs, and edit your generation settings — prompt, negative, size, steps, CFG, sampler, scheduler and seed — straight from the browser. No app, no account, no internet required. It started as a simple image viewer and grew into a lightweight control panel for ComfyUI over your local network.
 
+**Desktop** — the Settings panel docks to the right while the gallery/preview stays on the left:
+
 | Dark | Light |
 |:---:|:---:|
-| ![ComfyUI LAN Control Panel — desktop layout, dark mode](assets/hero-dark.png) | ![ComfyUI LAN Control Panel — desktop layout, light mode](assets/hero-light.png) |
+| ![Desktop layout, dark mode](assets/hero-dark.png) | ![Desktop layout, light mode](assets/hero-light.png) |
+
+**Mobile** — the same tool as a clean, phone-friendly remote (shown on Firefox for Android):
+
+| Dark | Light |
+|:---:|:---:|
+| ![Phone layout, dark mode](assets/mobile-dark.jpg) | ![Phone layout, light mode](assets/mobile-light.jpg) |
 
 ---
 
