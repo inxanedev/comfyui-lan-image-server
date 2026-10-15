@@ -23,6 +23,7 @@ Watch generations happen live, start and stop runs, and edit your generation set
 **Customize (from the web UI)**
 - One **Generation** panel for everything that goes into a run: **prompt** & **negative**, **size** (aspect ratio + megapixels, or exact width/height), **steps**, **CFG**, **sampler** and **scheduler**.
 - **Seed** — set a fixed seed, roll a new random one, or randomize every run (works with the `Seed (rgthree)` node).
+- **Presets** — save the whole Generation panel plus the seed as a named preset, then load, overwrite, delete, or unload them from a dropdown.
 - **Reset to defaults** restores everything to the workflow defaults in one tap.
 
 **Gallery actions**
@@ -129,6 +130,7 @@ The real-time sampler preview, with the current **step counter** (e.g. `12 / 20`
 ### Settings
 An expandable list of sections — only one opens at a time. What you see depends on which `inx` nodes are in your workflow:
 
+- **Presets** — save the current **Generation** settings and seed under a name. Pick a preset from the dropdown to load it, choose **None** to unload (back to defaults), and use **Save** / **Delete**. Saving while a preset is loaded asks whether to overwrite it or save a new one.
 - **Generation** — appears with `Fetch Generation Settings (LAN)`. Edit the **prompt** and **negative**, the **size** (aspect ratio + megapixels, or tick **Custom** for exact pixels — with a live size preview such as `1000x1000 px`), plus **Steps**, **CFG**, **Sampler** and **Scheduler**. A **Reset to defaults** button clears everything. Changes save automatically and apply to the next run.
 - **Seed (rgthree)** — appears only if a `Seed (rgthree)` node is in the workflow. Per node you can **Set** a fixed seed, roll a **New random** seed, switch to **Random each run**, or **Reset** to the workflow default.
 
@@ -142,6 +144,7 @@ At the bottom of the Settings tab: **Clear Images** (wipes the session gallery *
 - **Seed control is opt-in.** The Seed section only shows up when you use the [`Seed (rgthree)`](https://github.com/rgthree/rgthree-comfy) node. Other seed inputs are left untouched.
 - **Run the workflow once from ComfyUI first** so the panel can capture it for remote runs.
 - **Session images live in `temp/`** and are purged on startup, so every launch starts clean.
+- **Presets are just files.** They live as JSON in `custom_nodes/comfyui-lan-image-server/presets/`, so they survive restarts and are easy to copy or back up. That folder is gitignored, so your presets aren't committed.
 - **Only your changes are stored.** Anything you set to the node's default value is treated as "default" rather than an override, so the panel only carries what you actually changed.
 - **`Reuse Settings` reads the PNG.** Each generated image embeds its prompt/workflow, so the panel can pull the prompt, size and seed back out of a good result (unless you saved it with metadata stripped).
 - **The `Clear` button resets your remote settings too.** Along with the image gallery, it clears generation overrides and seed overrides back to their defaults so a fresh session can't leak settings into another workflow.
