@@ -35,7 +35,7 @@ Watch generations happen live, start and stop runs, and edit your generation set
 - Clean iOS-style interface with **light & dark mode**.
 - Smooth and snappy, with **image caching and preloading** so navigation is instant.
 - Remote **Clear** and **Shutdown PC** controls.
-- Images are **cleared automatically** on startup for a fresh session.
+- The gallery **persists across restarts**, so your images are still there when you come back.
 
 ---
 
@@ -120,9 +120,9 @@ One node that outputs all of the generation settings, which you then control fro
 The panel has three tabs: **Gallery**, **Live**, and **Settings**.
 
 ### Gallery
-Browse every image generated this session. Use **Prev** / **Next** and the counter (e.g. `3 / 7`) — the buttons stretch across the bar for easy tapping. Pinch to zoom, drag to pan.
+Browse every image generated this session. Use **Prev** / **Next** and the counter (e.g. `3 / 7`) — the buttons stretch across the bar for easy tapping. Pinch to zoom, drag to pan. The gallery **persists across restarts**, so nothing is lost when ComfyUI is closed.
 
-The **↓ button** on the right opens the gallery actions: **Save Image**, **Save All** (a `.zip`), **Reuse Settings**, **Copy Prompt**, and the **Remove metadata** toggle.
+The **↓ button** on the right opens the gallery actions: **Save Image**, **Save All** (a `.zip`), **Reuse Settings**, **Copy Prompt**, a **Remove metadata** toggle, and **Delete Image** (removes the selected image from the gallery and disk).
 
 ### Live
 The real-time sampler preview, with the current **step counter** (e.g. `12 / 20`) in the corner. When a generation finishes it becomes the full-quality image, and the action bar here has **Run**, **Run (Instant)** / **Stop Loop**, and **Cancel**.
@@ -143,7 +143,7 @@ At the bottom of the Settings tab: **Clear Images** (wipes the session gallery *
 - **Live preview needs a preview method.** Start ComfyUI with `--preview-method latent2rgb` or `taesd`.
 - **Seed control is opt-in.** The Seed section only shows up when you use the [`Seed (rgthree)`](https://github.com/rgthree/rgthree-comfy) node. Other seed inputs are left untouched.
 - **Run the workflow once from ComfyUI first** so the panel can capture it for remote runs.
-- **Session images live in `temp/`** and are purged on startup, so every launch starts clean.
+- **Images persist on disk.** They live in `custom_nodes/comfyui-lan-image-server/temp/` and are reloaded on startup, so your gallery survives restarts. Use **Delete Image** for a single image or **Clear Images** to wipe them all (both delete the files).
 - **Presets are just files.** They live as JSON in `custom_nodes/comfyui-lan-image-server/presets/`, so they survive restarts and are easy to copy or back up. That folder is gitignored, so your presets aren't committed.
 - **Only your changes are stored.** Anything you set to the node's default value is treated as "default" rather than an override, so the panel only carries what you actually changed.
 - **`Reuse Settings` reads the PNG.** Each generated image embeds its prompt/workflow, so the panel can pull the prompt, size and seed back out of a good result (unless you saved it with metadata stripped).
