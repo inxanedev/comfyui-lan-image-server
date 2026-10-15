@@ -4,3 +4,4 @@ debug_log.txt
 __pycache__/
 *.pyc
 .DS_Store
+AGENTS.md
