@@ -4,6 +4,10 @@ Turn any phone, tablet, or computer on your Wi-Fi into a **remote control for Co
 
 Watch generations happen live, start and stop runs, and edit your generation settings — prompt, negative, size, steps, CFG, sampler, scheduler and seed — straight from the browser. No app, no account, no internet required. It started as a simple image viewer and grew into a lightweight control panel for ComfyUI over your local network.
 
+| Dark | Light |
+|:---:|:---:|
+| ![ComfyUI LAN Control Panel — desktop layout, dark mode](assets/hero-dark.png) | ![ComfyUI LAN Control Panel — desktop layout, light mode](assets/hero-light.png) |
+
 ---
 
 ## Highlights
@@ -124,7 +128,11 @@ The panel has three tabs: **Gallery**, **Live**, and **Settings**.
 ### Gallery
 Browse every image generated this session. Use **Prev** / **Next** and the counter (e.g. `3 / 7`) — the buttons stretch across the bar for easy tapping. On a touch screen, **swipe left/right** to move between images; on a computer, **scroll the mouse wheel up/down** over the image. Pinch to zoom, drag to pan. The gallery **persists across restarts**, so nothing is lost when ComfyUI is closed.
 
+![Gallery tab showing a generated image](assets/gallery.png)
+
 The **↓ button** on the right opens the gallery actions: **Save Image**, **Save All** (a `.zip`), **Reuse Settings**, **Copy Prompt**, **Upscale (2x)** (see [Upscaling](#upscaling-seedvr2)), a **Remove metadata** toggle, and **Delete Image** (removes the selected image from the gallery and disk). Images that came out of the upscaler show an **Upscaled** badge.
+
+![Gallery actions menu](assets/gallery-actions.png)
 
 ### Live
 The real-time sampler preview, with the current **step counter** (e.g. `12 / 20`) in the corner. When a generation finishes it becomes the full-quality image, and the action bar here has **Run**, **Run (Instant)** / **Stop Loop**, and **Cancel**.
@@ -137,6 +145,10 @@ Below that, an expandable list of sections — only one opens at a time. What yo
 - **Presets** — save the current **Generation** settings and seed under a name. Pick a preset from the dropdown to load it, choose **None** to unload (back to defaults), and use **Save** / **Delete**. Saving while a preset is loaded asks whether to overwrite it or save a new one.
 - **Generation** — appears with `Fetch Generation Settings (LAN)`. Edit the **prompt** and **negative**, the **size** (aspect ratio + megapixels, or tick **Custom** for exact pixels — with a live size preview such as `1000x1000 px`), plus **Steps**, **CFG**, **Sampler** and **Scheduler**. A **Reset to defaults** button clears everything. Changes save automatically and apply to the next run.
 - **Seed (rgthree)** — appears only if a `Seed (rgthree)` node is in the workflow. Per node you can **Set** a fixed seed, roll a **New random** seed, switch to **Random each run**, or **Reset** to the workflow default.
+
+![The Generation panel](assets/settings-generation.png)
+
+![The Seed (rgthree) panel](assets/settings-seed.png)
 
 At the bottom of the Settings tab: **Clear Images** (deletes every gallery image) and **Shutdown PC**. Clearing images leaves your generation settings and presets untouched.
 
