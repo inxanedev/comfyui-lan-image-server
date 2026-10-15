@@ -33,8 +33,13 @@ NEXT_IMAGE_INDEX = 1
 SERVER_INITIALIZED = False
 
 UPSCALER_TEMPLATE_PATH = os.path.join(NODE_DIR, "upscaler_api.json")
+UPSCALER_4K_TEMPLATE_PATH = os.path.join(NODE_DIR, "4k_upscaler_api.json")
 UPSCALER_PENDING = None
 UPSCALE_SCALES = (1.5, 2.0)
+UPSCALER_TEMPLATES = {
+    "2x": UPSCALER_TEMPLATE_PATH,
+    "4k": UPSCALER_4K_TEMPLATE_PATH,
+}
 
 LAST_PROMPT_INFO = None
 LOOP_ACTIVE = False
@@ -535,9 +540,10 @@ def apply_preset(payload):
 # Upscaler (external API workflow)
 # ------------------------------------------------------------------
 
-def _load_upscaler_template():
+def _load_upscaler_template(path=None):
+    path = path or UPSCALER_TEMPLATE_PATH
     try:
-        with open(UPSCALER_TEMPLATE_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             template = json.load(f)
         return template if isinstance(template, dict) and template else None
     except (OSError, ValueError):
@@ -596,8 +602,8 @@ def _apply_upscale_scale(prompt, scale):
     )
 
 
-def _upscaler_ready():
-    template = _load_upscaler_template()
+def _upscaler_ready(path=None):
+    template = _load_upscaler_template(path)
     if not template or _upscaler_loader_id(template) is None:
         return False
 
@@ -1018,26 +1024,33 @@ async def handle_upscale(request):
     if UPSCALER_PENDING:
         return web.json_response({"status": "error", "message": "An upscale is already running."}, status=409)
 
-    template = _load_upscaler_template()
-    loader_id = _upscaler_loader_id(template) if template else None
-    if not template or loader_id is None:
-        return web.json_response(
-            {"status": "error", "message": "No upscaler workflow found (upscaler_api.json)."},
-            status=400
-        )
-
     try:
         data = await request.json()
         idx = int(data.get("index"))
     except (TypeError, ValueError):
         return web.json_response({"status": "error", "message": "Invalid index."}, status=400)
 
-    try:
-        scale = float(data.get("scale", 2.0))
-    except (TypeError, ValueError):
-        scale = 2.0
-    if scale not in UPSCALE_SCALES:
-        scale = 2.0
+    mode = data.get("mode", "2x")
+    if mode not in UPSCALER_TEMPLATES:
+        return web.json_response({"status": "error", "message": "Unknown upscale mode."}, status=400)
+
+    template_path = UPSCALER_TEMPLATES[mode]
+    template = _load_upscaler_template(template_path)
+    loader_id = _upscaler_loader_id(template) if template else None
+    if not template or loader_id is None:
+        return web.json_response(
+            {"status": "error", "message": f"No upscale workflow found ({os.path.basename(template_path)})."},
+            status=400
+        )
+
+    scale = 2.0
+    if mode == "2x":
+        try:
+            scale = float(data.get("scale", 2.0))
+        except (TypeError, ValueError):
+            scale = 2.0
+        if scale not in UPSCALE_SCALES:
+            scale = 2.0
 
     if idx < 0 or idx >= len(HISTORY_FILES):
         return web.json_response({"status": "error", "message": "Image not found."}, status=404)
@@ -1057,7 +1070,8 @@ async def handle_upscale(request):
 
     prompt = copy.deepcopy(template)
     prompt[loader_id].setdefault("inputs", {})["image"] = input_name
-    _apply_upscale_scale(prompt, scale)
+    if mode == "2x":
+        _apply_upscale_scale(prompt, scale)
 
     prompt_id = str(uuid.uuid4())
     number = PromptServer.instance.number
@@ -1108,7 +1122,8 @@ async def handle_ws(request):
         "settings": settings_state(),
         "presets": list_presets(),
         "current_preset": CURRENT_PRESET,
-        "upscaler_available": _upscaler_ready(),
+        "upscaler_available": _upscaler_ready(UPSCALER_TEMPLATE_PATH),
+        "upscaler_4k_available": _upscaler_ready(UPSCALER_4K_TEMPLATE_PATH),
         "upscale_running": UPSCALER_PENDING is not None,
         "upscaled": _upscaled_indices()
     })

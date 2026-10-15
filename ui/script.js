@@ -30,10 +30,8 @@ const quickMenu = document.getElementById('quickMenu');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
 const deleteImageBtn = document.getElementById('deleteImageBtn');
-const upscaleBtns = [
-    document.getElementById('upscaleBtn15'),
-    document.getElementById('upscaleBtn20')
-];
+const upscaleBtn4k = document.getElementById('upscaleBtn4k');
+const upscaleBtn20 = document.getElementById('upscaleBtn20');
 const reuseBtn = document.getElementById('reuseBtn');
 const copyPromptBtn = document.getElementById('copyPromptBtn');
 const stripMetadata = document.getElementById('stripMetadata');
@@ -70,6 +68,7 @@ let progressValue = null;
 let progressMax = null;
 let runInProgress = false;
 let upscalerAvailable = false;
+let upscaler4kAvailable = false;
 let upscaling = false;
 let upscaledIndices = new Set();
 let simpleMode = false;
@@ -1753,7 +1752,7 @@ function connectWS() {
                     }
 
                     if (data.type === 'init') {
-                        applyUpscaleState({ available: data.upscaler_available, running: data.upscale_running });
+                        applyUpscaleState({ available: data.upscaler_available, available4k: data.upscaler_4k_available, running: data.upscale_running });
                     }
                 } else if (data.type === 'upscale_status') {
                     applyUpscaleState({ running: data.running });
@@ -1889,18 +1888,22 @@ async function deleteCurrentImage() {
 }
 
 function updateUpscaleButton() {
-    const disabled = (!upscalerAvailable || upscaling || totalImages === 0);
-    const title = upscalerAvailable ? '' : 'Requires the SeedVR2 extension and upscaler_api.json';
-    for (const btn of upscaleBtns) {
-        if (!btn) continue;
-        btn.disabled = disabled;
-        btn.title = title;
+    const base = (upscaling || totalImages === 0);
+
+    if (upscaleBtn4k) {
+        upscaleBtn4k.disabled = base || !upscaler4kAvailable;
+        upscaleBtn4k.title = upscaler4kAvailable ? '' : 'Requires the SeedVR2 extension and 4k_upscaler_api.json';
+    }
+    if (upscaleBtn20) {
+        upscaleBtn20.disabled = base || !upscalerAvailable;
+        upscaleBtn20.title = upscalerAvailable ? '' : 'Requires the SeedVR2 extension and upscaler_api.json';
     }
 }
 
 function applyUpscaleState(data) {
     if (!data) return;
     if (data.available !== undefined) upscalerAvailable = !!data.available;
+    if (data.available4k !== undefined) upscaler4kAvailable = !!data.available4k;
 
     const wasUpscaling = upscaling;
     if (data.running !== undefined) upscaling = !!data.running;
@@ -2456,20 +2459,24 @@ function initPreviewGestures() {
     });
 }
 
-async function upscaleCurrentImage(scale) {
+async function upscaleCurrentImage(mode) {
     if (totalImages === 0 || upscaling) return;
-    if (!upscalerAvailable) {
-        showAlert('No upscaler workflow found. Export your upscaler workflow as API format and save it as "upscaler_api.json" in the custom node folder.', 'Upscale');
+    if (mode !== '4k') mode = '2x';
+
+    const available = mode === '4k' ? upscaler4kAvailable : upscalerAvailable;
+    if (!available) {
+        const file = mode === '4k' ? '4k_upscaler_api.json' : 'upscaler_api.json';
+        showAlert(`No upscale workflow found. Export your workflow as API format and save it as "${file}" in the custom node folder.`, 'Upscale');
         return;
     }
-    if (!Number.isFinite(Number(scale))) scale = 2;
+
     closeSaveMenu();
     const index = currentIndex - 1;
     try {
         const resp = await fetch('/inx/upscale', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ index: index, scale: scale })
+            body: JSON.stringify({ index: index, mode: mode })
         });
         const data = await resp.json();
         if (!resp.ok) {
@@ -2613,7 +2620,7 @@ function onDocumentClickCloseSaveMenu(e) {
 const QUICK_ACTIONS = {
     save: function () { downloadCurrentImage(); },
     delete: function () { deleteCurrentImage(); },
-    upscale: function () { upscaleCurrentImage(2); }
+    upscale: function () { upscaleCurrentImage('2x'); }
 };
 
 const QUICK_LONG_PRESS_MS = 380;
