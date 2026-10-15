@@ -184,6 +184,19 @@
         </div>
     </footer>
 
+    <div id="modal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-backdrop" onclick="onModalCancel()"></div>
+        <div class="modal-card">
+            <div id="modalTitle" class="modal-title"></div>
+            <div id="modalMessage" class="modal-message"></div>
+            <input id="modalInput" class="modal-input" type="text" style="display:none;">
+            <div class="modal-actions">
+                <button id="modalCancel" class="btn modal-btn" type="button" onclick="onModalCancel()">Cancel</button>
+                <button id="modalConfirm" class="btn btn-primary modal-btn" type="button" onclick="onModalConfirm()">OK</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/inx/ui/script.js"></script>
 </body>
 </html>

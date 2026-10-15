@@ -356,7 +356,7 @@ async function runOnce() {
         });
         const res = await resp.json();
         if (!resp.ok) {
-            alert(res.message || 'Error triggering run.');
+            showAlert(res.message || 'Error triggering run.', 'Run failed');
             status.textContent = 'Error';
             status.style.color = '#F44336';
         } else {
@@ -365,7 +365,7 @@ async function runOnce() {
             runInProgress = true;
         }
     } catch (e) {
-        alert('Network error triggering run.');
+        showAlert('Network error triggering run.', 'Run failed');
         status.textContent = 'Network error';
         status.style.color = '#F44336';
     } finally {
@@ -398,7 +398,7 @@ async function toggleLoop() {
             });
             const res = await resp.json();
             if (!resp.ok) {
-                alert(res.message || 'Error starting loop.');
+                showAlert(res.message || 'Error starting loop.', 'Loop failed');
                 status.textContent = 'Error';
                 status.style.color = '#F44336';
             } else {
@@ -406,7 +406,7 @@ async function toggleLoop() {
                 runInProgress = true;
             }
         } catch (e) {
-            alert('Network error starting loop.');
+            showAlert('Network error starting loop.', 'Loop failed');
             status.textContent = 'Network error';
             status.style.color = '#F44336';
         } finally {
@@ -680,7 +680,7 @@ async function postPreset(action, name) {
             body: JSON.stringify({ action: action, name: name || '' })
         });
         const data = await resp.json();
-        if (data && data.message) alert(data.message);
+        if (data && data.message) showAlert(data.message, 'Presets');
         if (data && data.presets) {
             applyPresets(data);
             if (data.settings) applySettingsState(data.settings);
@@ -688,7 +688,7 @@ async function postPreset(action, name) {
         }
         return data;
     } catch (e) {
-        alert('Preset action failed.');
+        showAlert('Preset action failed.', 'Presets');
         return null;
     }
 }
@@ -706,32 +706,36 @@ async function onPresetSelect() {
 }
 
 async function savePresetFlow() {
+    let name = currentPreset;
+
     if (currentPreset) {
-        const overwrite = confirm('Preset "' + currentPreset + '" is loaded.\n\nOK: overwrite it\nCancel: save as a new preset');
+        const overwrite = await showConfirm('Preset "' + currentPreset + '" is currently loaded.', {
+            title: 'Save Preset',
+            confirmText: 'Overwrite',
+            cancelText: 'Save as new'
+        });
         if (overwrite) {
             const data = await postPreset('save', currentPreset);
             if (data) showPresetNotice('Saved "' + currentPreset + '"');
             return;
         }
-        const input = prompt('Name for the new preset:', currentPreset);
-        if (input === null) return;
-        const name = input.trim();
-        if (!name) return;
-        const data = await postPreset('save', name);
-        if (data && data.current) showPresetNotice('Saved "' + data.current + '"');
+        name = await showPrompt('Name for the new preset:', currentPreset, { title: 'Save Preset', confirmText: 'Save' });
     } else {
-        const input = prompt('Name for the new preset:');
-        if (input === null) return;
-        const name = input.trim();
-        if (!name) return;
-        const data = await postPreset('save', name);
-        if (data && data.current) showPresetNotice('Saved "' + data.current + '"');
+        name = await showPrompt('Name for the new preset:', '', { title: 'Save Preset', confirmText: 'Save' });
     }
+
+    if (name === null) return;
+    name = String(name).trim();
+    if (!name) return;
+    const data = await postPreset('save', name);
+    if (data && data.current) showPresetNotice('Saved "' + data.current + '"');
 }
 
 async function deletePreset() {
     if (!currentPreset) return;
-    if (!confirm('Delete preset "' + currentPreset + '"?')) return;
+    if (!(await showConfirm('Delete preset "' + currentPreset + '"?', { title: 'Delete Preset', confirmText: 'Delete', danger: true }))) {
+        return;
+    }
     const name = currentPreset;
     await postPreset('delete', name);
     showPresetNotice('Deleted "' + name + '"');
@@ -837,7 +841,7 @@ async function setSeed(id, mode, value) {
         if (mode === 'fixed') {
             body.value = parseInt(value, 10);
             if (!Number.isFinite(body.value)) {
-                alert('Please enter a valid integer seed.');
+                showAlert('Please enter a valid integer seed.', 'Seed');
                 return;
             }
         }
@@ -850,7 +854,7 @@ async function setSeed(id, mode, value) {
         if (data && data.seeds) {
             updateSeedUI(data);
         } else if (data && data.message) {
-            alert(data.message);
+            showAlert(data.message, 'Seed');
         }
     } catch (e) {}
 }
@@ -1159,7 +1163,7 @@ async function downloadCurrentImage() {
         a.remove();
         setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
     } catch (e) {
-        alert('Could not save the image.');
+        showAlert('Could not save the image.', 'Save');
     } finally {
         downloadBtn.disabled = (totalImages === 0);
     }
@@ -1182,7 +1186,7 @@ async function downloadAll() {
         a.remove();
         setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
     } catch (e) {
-        alert('Could not save the images.');
+        showAlert('Could not save the images.', 'Save All');
     } finally {
         downloadAllBtn.disabled = (totalImages === 0);
     }
@@ -1235,7 +1239,7 @@ async function reuseImageSettings() {
             status.style.color = '#4CAF50';
         }, 2500);
     } catch (e) {
-        alert('Could not read the image settings.');
+        showAlert('Could not read the image settings.', 'Reuse Settings');
     } finally {
         reuseBtn.disabled = (totalImages === 0);
     }
@@ -1280,7 +1284,7 @@ async function copyPrompt() {
             status.style.color = '#4CAF50';
         }, 2000);
     } catch (e) {
-        alert('Could not read the prompt.');
+        showAlert('Could not read the prompt.', 'Copy Prompt');
     } finally {
         copyPromptBtn.disabled = (totalImages === 0);
     }
@@ -1316,14 +1320,123 @@ function onDocumentClickCloseSaveMenu(e) {
     closeSaveMenu();
 }
 
-function killServer() {
-    if (confirm("Clear image history and close active session?")) {
-        fetch('/inx/kill_server', { method: 'POST' });
+/* ---------- Themed modal dialogs ---------- */
+
+let modalResolve = null;
+
+function modal(options) {
+    const opts = options || {};
+    const el = document.getElementById('modal');
+    const titleEl = document.getElementById('modalTitle');
+    const messageEl = document.getElementById('modalMessage');
+    const inputEl = document.getElementById('modalInput');
+    const cancelBtn = document.getElementById('modalCancel');
+    const confirmBtn = document.getElementById('modalConfirm');
+    if (!el) return Promise.resolve(false);
+
+    if (titleEl) titleEl.textContent = opts.title || '';
+    if (messageEl) messageEl.textContent = opts.message || '';
+
+    const isInput = opts.input !== undefined && opts.input !== null;
+    if (inputEl) {
+        inputEl.style.display = isInput ? 'block' : 'none';
+        inputEl.value = isInput ? String(opts.input) : '';
+    }
+
+    if (cancelBtn) {
+        cancelBtn.textContent = opts.cancelText || 'Cancel';
+        cancelBtn.style.display = opts.showCancel === false ? 'none' : '';
+    }
+    if (confirmBtn) {
+        confirmBtn.textContent = opts.confirmText || 'OK';
+        confirmBtn.classList.toggle('btn-danger', !!opts.danger);
+        confirmBtn.classList.toggle('btn-primary', !opts.danger);
+    }
+
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+    document.addEventListener('keydown', onModalKeydown, true);
+
+    if (isInput) {
+        setTimeout(() => {
+            try { inputEl.focus(); inputEl.select(); } catch (e) {}
+        }, 60);
+    }
+
+    return new Promise(function (resolve) { modalResolve = resolve; });
+}
+
+function resolveModal(value) {
+    const el = document.getElementById('modal');
+    if (el) {
+        el.classList.remove('open');
+        el.setAttribute('aria-hidden', 'true');
+    }
+    document.removeEventListener('keydown', onModalKeydown, true);
+    const resolve = modalResolve;
+    modalResolve = null;
+    if (resolve) resolve(value);
+}
+
+function onModalConfirm() {
+    const inputEl = document.getElementById('modalInput');
+    const isInput = inputEl && inputEl.style.display !== 'none';
+    resolveModal(isInput ? inputEl.value : true);
+}
+
+function onModalCancel() {
+    if (!modalResolve) return;
+    const inputEl = document.getElementById('modalInput');
+    const isInput = inputEl && inputEl.style.display !== 'none';
+    resolveModal(isInput ? null : false);
+}
+
+function onModalKeydown(e) {
+    if (!modalResolve) return;
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        onModalConfirm();
+    } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onModalCancel();
     }
 }
 
+function showAlert(message, title) {
+    return modal({ title: title, message: message, showCancel: false, confirmText: 'OK' });
+}
+
+function showConfirm(message, options) {
+    const opts = options || {};
+    return modal({
+        title: opts.title || '',
+        message: message,
+        confirmText: opts.confirmText || 'OK',
+        cancelText: opts.cancelText || 'Cancel',
+        danger: !!opts.danger
+    });
+}
+
+function showPrompt(message, defaultValue, options) {
+    const opts = options || {};
+    return modal({
+        title: opts.title || '',
+        message: message,
+        input: defaultValue != null ? defaultValue : '',
+        confirmText: opts.confirmText || 'OK',
+        cancelText: opts.cancelText || 'Cancel'
+    });
+}
+
+async function killServer() {
+    if (!(await showConfirm("Clear the image history and reset all settings to defaults?", { title: 'Clear Images', confirmText: 'Clear', danger: true }))) {
+        return;
+    }
+    fetch('/inx/kill_server', { method: 'POST' });
+}
+
 async function shutdownPC() {
-    if (!confirm("Shut down the computer running ComfyUI?\n\nThis powers off the PC immediately and force-closes any open apps — unsaved work will be lost. It cannot be undone from here.")) {
+    if (!(await showConfirm("Shut down the computer running ComfyUI?\n\nThis powers off the PC immediately and force-closes any open apps — unsaved work will be lost. It cannot be undone from here.", { title: 'Shutdown PC', confirmText: 'Shut down', danger: true }))) {
         return;
     }
     const btn = document.getElementById('shutdownBtn');
