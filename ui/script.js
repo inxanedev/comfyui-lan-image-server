@@ -24,6 +24,7 @@ const saveMenu = document.getElementById('saveMenu');
 const saveMenuBtn = document.getElementById('saveMenuBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
+const deleteImageBtn = document.getElementById('deleteImageBtn');
 const reuseBtn = document.getElementById('reuseBtn');
 const copyPromptBtn = document.getElementById('copyPromptBtn');
 const stripMetadata = document.getElementById('stripMetadata');
@@ -934,6 +935,7 @@ async function updateGalleryImage() {
         nextBtn.disabled = true;
         downloadBtn.disabled = true;
         downloadAllBtn.disabled = true;
+        deleteImageBtn.disabled = true;
         reuseBtn.disabled = true;
         copyPromptBtn.disabled = true;
         displayedImageKey = null;
@@ -945,6 +947,7 @@ async function updateGalleryImage() {
     nextBtn.disabled = (currentIndex >= totalImages);
     downloadBtn.disabled = false;
     downloadAllBtn.disabled = false;
+    deleteImageBtn.disabled = false;
     reuseBtn.disabled = false;
     copyPromptBtn.disabled = false;
 
@@ -1064,6 +1067,9 @@ function connectWS() {
                     totalImages = data.total;
 
                     if (wasAtLatest) {
+                        currentIndex = totalImages;
+                    }
+                    if (currentIndex > totalImages) {
                         currentIndex = totalImages;
                     }
 
@@ -1199,6 +1205,37 @@ async function downloadAll() {
         showAlert('Could not save the images.', 'Save All');
     } finally {
         downloadAllBtn.disabled = (totalImages === 0);
+    }
+}
+
+async function deleteCurrentImage() {
+    if (totalImages === 0) return;
+    if (!(await showConfirm('Delete this image from the gallery? The file is removed from disk.', { title: 'Delete Image', confirmText: 'Delete', danger: true }))) {
+        return;
+    }
+    closeSaveMenu();
+    const index = currentIndex - 1;
+    deleteImageBtn.disabled = true;
+    try {
+        const resp = await fetch('/inx/image/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index: index })
+        });
+        const data = await resp.json();
+        if (data && data.status === 'deleted') {
+            syncEpoch(data.epoch);
+            totalImages = data.total;
+            if (currentIndex > totalImages) currentIndex = totalImages;
+            if (currentIndex < 1) currentIndex = 0;
+            if (currentTab === 'gallery') updateGalleryImage();
+        } else if (data && data.message) {
+            showAlert(data.message, 'Delete Image');
+        }
+    } catch (e) {
+        showAlert('Could not delete the image.', 'Delete Image');
+    } finally {
+        deleteImageBtn.disabled = (totalImages === 0);
     }
 }
 

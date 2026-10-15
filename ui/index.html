@@ -177,6 +177,9 @@
                 <input type="checkbox" id="stripMetadata">
                 <span>Remove metadata (workflow info)</span>
             </label>
+            <div class="save-row">
+                <button id="deleteImageBtn" class="btn btn-danger" type="button" onclick="deleteCurrentImage()" disabled>Delete Image</button>
+            </div>
         </div>
         <div id="workflowBar" class="control-row">
             <button id="runBtn" class="btn btn-primary" onclick="runOnce()" style="flex: 1;">Run</button>

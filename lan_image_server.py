@@ -6,7 +6,6 @@ import math
 import os
 import random
 import re
-import shutil
 import socket
 import subprocess
 import time
@@ -30,6 +29,7 @@ UI_DIR = os.path.join(NODE_DIR, "ui")
 CONNECTED_WEBSOCKETS = set()
 HISTORY_FILES = []
 HISTORY_EPOCH = uuid.uuid4().hex
+NEXT_IMAGE_INDEX = 1
 SERVER_INITIALIZED = False
 
 LAST_PROMPT_INFO = None
@@ -77,15 +77,28 @@ RES_CUSTOM_HEIGHT = 1224
 PRESETS_DIR = os.path.join(NODE_DIR, "presets")
 CURRENT_PRESET = None
 
-def ensure_clean_temp_dir():
-    """Clears the temp directory when the server starts for the first time."""
-    global SERVER_INITIALIZED, HISTORY_FILES
-    if not SERVER_INITIALIZED:
-        if os.path.exists(TEMP_DIR):
-            shutil.rmtree(TEMP_DIR)
-        os.makedirs(TEMP_DIR, exist_ok=True)
-        HISTORY_FILES = []
-        SERVER_INITIALIZED = True
+def ensure_temp_dir():
+    """Ensures the temp directory exists and restores any images from a previous session."""
+    global SERVER_INITIALIZED, HISTORY_FILES, NEXT_IMAGE_INDEX
+    if SERVER_INITIALIZED:
+        return
+
+    os.makedirs(TEMP_DIR, exist_ok=True)
+
+    entries = []
+    for name in os.listdir(TEMP_DIR):
+        match = re.match(r"img_(\d+)\.png$", name)
+        if match:
+            entries.append((int(match.group(1)), os.path.join(TEMP_DIR, name)))
+    entries.sort(key=lambda item: item[0])
+
+    HISTORY_FILES = [path for _, path in entries]
+    NEXT_IMAGE_INDEX = (entries[-1][0] + 1) if entries else 1
+    SERVER_INITIALIZED = True
+
+
+# Restore the previous session's gallery as soon as the node loads.
+ensure_temp_dir()
 
 # ------------------------------------------------------------------
 # Hook into PromptServer to capture binary previews
@@ -721,6 +734,32 @@ async def handle_download_all(request):
     )
 
 
+@PromptServer.instance.routes.post("/inx/image/delete")
+async def handle_delete_image(request):
+    global HISTORY_FILES, HISTORY_EPOCH
+
+    try:
+        data = await request.json()
+        idx = int(data.get("index"))
+    except (TypeError, ValueError):
+        return web.json_response({"status": "error", "message": "Invalid index."}, status=400)
+
+    if idx < 0 or idx >= len(HISTORY_FILES):
+        return web.json_response({"status": "error", "message": "Image not found."}, status=404)
+
+    path = HISTORY_FILES.pop(idx)
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
+
+    # Indices shift after a removal, so bust the client-side image cache.
+    HISTORY_EPOCH = uuid.uuid4().hex
+    broadcast_json({"type": "update", "total": len(HISTORY_FILES), "epoch": HISTORY_EPOCH})
+    return web.json_response({"status": "deleted", "total": len(HISTORY_FILES), "epoch": HISTORY_EPOCH})
+
+
 @PromptServer.instance.routes.get("/inx/ws")
 async def handle_ws(request):
     ws = web.WebSocketResponse()
@@ -1033,7 +1072,7 @@ async def handle_shutdown(request):
 
 @PromptServer.instance.routes.post("/inx/kill_server")
 async def kill_server_endpoint(request):
-    global HISTORY_FILES, HISTORY_EPOCH
+    global HISTORY_FILES, HISTORY_EPOCH, NEXT_IMAGE_INDEX
 
     for f in HISTORY_FILES:
         if os.path.exists(f):
@@ -1042,6 +1081,7 @@ async def kill_server_endpoint(request):
             except OSError:
                 pass
     HISTORY_FILES = []
+    NEXT_IMAGE_INDEX = 1
     HISTORY_EPOCH = uuid.uuid4().hex
 
     # Reset remote overrides so a fresh session never leaks settings into another workflow.
@@ -1091,9 +1131,9 @@ class ServeImageLAN:
     DESCRIPTION = "Serves images over the LAN and shows an in-node preview. Passes the image through so it can be chained to other nodes."
 
     async def serve(self, images, prompt=None, extra_pnginfo=None):
-        global HISTORY_FILES
+        global HISTORY_FILES, NEXT_IMAGE_INDEX
 
-        ensure_clean_temp_dir()
+        ensure_temp_dir()
 
         metadata = PngInfo()
         if prompt is not None:
@@ -1129,7 +1169,8 @@ class ServeImageLAN:
             counter += 1
 
             # LAN history copy (served via /inx/image)
-            lan_name = f"img_{len(HISTORY_FILES) + 1:05d}.png"
+            lan_name = f"img_{NEXT_IMAGE_INDEX:05d}.png"
+            NEXT_IMAGE_INDEX += 1
             lan_path = os.path.join(TEMP_DIR, lan_name)
             with open(lan_path, "wb") as f:
                 f.write(data)
