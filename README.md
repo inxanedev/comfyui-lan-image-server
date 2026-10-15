@@ -177,4 +177,10 @@ The default workflow loads `seedvr2_ema_3b_fp8_e4m3fn.safetensors` (DiT) and `em
 
 ## License
 
-No license, use it however you like. This whole thing including the README is vibe coded anyway :D
+You're free to use, modify, fork, and redistribute this project — including for commercial purposes. The one condition is **attribution**: any copy, fork, or derivative work must give clear credit to the original repository and link back to it:
+
+> [inxanedev/comfyui-lan-image-server](https://github.com/inxanedev/comfyui-lan-image-server)
+
+A line in your README or an "About" screen is plenty. Please don't claim it as your own original work or strip the credit.
+
+This software is provided **as-is**, without warranty of any kind.
