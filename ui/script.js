@@ -200,7 +200,8 @@ function initZoomGestures() {
                 startX: e.touches[0].clientX,
                 startY: e.touches[0].clientY,
                 startTx: zoomTx,
-                startTy: zoomTy
+                startTy: zoomTy,
+                swipeEligible: (currentTab === 'gallery' && zoomScale <= 1)
             };
         }
     }, { passive: false });
@@ -247,13 +248,16 @@ function initZoomGestures() {
     }, { passive: false });
 
     viewer.addEventListener('touchend', (e) => {
+        const finished = gesture;
+
         if (e.touches.length === 1) {
             gesture = {
                 mode: 'pan',
                 startX: e.touches[0].clientX,
                 startY: e.touches[0].clientY,
                 startTx: zoomTx,
-                startTy: zoomTy
+                startTy: zoomTy,
+                swipeEligible: false
             };
             return;
         }
@@ -261,6 +265,16 @@ function initZoomGestures() {
         if (e.touches.length === 0) {
             gesture = null;
             resetZoom();
+
+            // Swipe left/right in the Gallery to move between images (only when not zoomed).
+            if (finished && finished.swipeEligible && finished.mode === 'pan'
+                && currentTab === 'gallery' && e.changedTouches && e.changedTouches[0]) {
+                const dx = e.changedTouches[0].clientX - finished.startX;
+                const dy = e.changedTouches[0].clientY - finished.startY;
+                if (Math.abs(dx) >= 45 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+                    navigate(dx < 0 ? 1 : -1);
+                }
+            }
         }
     }, { passive: false });
 
