@@ -25,6 +25,7 @@ const saveMenuBtn = document.getElementById('saveMenuBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
 const deleteImageBtn = document.getElementById('deleteImageBtn');
+const upscaleBtn = document.getElementById('upscaleBtn');
 const reuseBtn = document.getElementById('reuseBtn');
 const copyPromptBtn = document.getElementById('copyPromptBtn');
 const stripMetadata = document.getElementById('stripMetadata');
@@ -51,6 +52,8 @@ let seedNodes = [];
 let progressValue = null;
 let progressMax = null;
 let runInProgress = false;
+let upscalerAvailable = false;
+let upscaling = false;
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
@@ -988,6 +991,7 @@ async function updateGalleryImage(slideDirection) {
         deleteImageBtn.disabled = true;
         reuseBtn.disabled = true;
         copyPromptBtn.disabled = true;
+        updateUpscaleButton();
         displayedImageKey = null;
         return;
     }
@@ -1000,6 +1004,7 @@ async function updateGalleryImage(slideDirection) {
     deleteImageBtn.disabled = false;
     reuseBtn.disabled = false;
     copyPromptBtn.disabled = false;
+    updateUpscaleButton();
 
     const index = currentIndex - 1;
     const key = `gallery:${imageEpoch}:${index}`;
@@ -1164,6 +1169,17 @@ function connectWS() {
                     if (data.type === 'init' && (data.presets !== undefined || data.current_preset !== undefined)) {
                         applyPresets({ presets: data.presets || [], current: data.current_preset });
                     }
+
+                    if (data.focus !== undefined && data.focus !== null) {
+                        currentIndex = Math.max(1, Math.min(totalImages, Number(data.focus) + 1));
+                        if (currentTab === 'gallery') updateGalleryImage();
+                    }
+
+                    if (data.type === 'init') {
+                        applyUpscaleState({ available: data.upscaler_available, running: data.upscale_running });
+                    }
+                } else if (data.type === 'upscale_status') {
+                    applyUpscaleState({ running: data.running });
                 } else if (data.type === 'seed_update') {
                     updateSeedUI(data);
                 } else if (data.type === 'settings_update') {
@@ -1289,6 +1305,51 @@ async function deleteCurrentImage() {
         showAlert('Could not delete the image.', 'Delete Image');
     } finally {
         deleteImageBtn.disabled = (totalImages === 0);
+    }
+}
+
+function updateUpscaleButton() {
+    if (!upscaleBtn) return;
+    upscaleBtn.disabled = (!upscalerAvailable || upscaling || totalImages === 0);
+}
+
+function applyUpscaleState(data) {
+    if (!data) return;
+    if (data.available !== undefined) upscalerAvailable = !!data.available;
+    if (data.running !== undefined) upscaling = !!data.running;
+
+    if (upscaling) {
+        status.textContent = 'Upscaling...';
+        status.style.color = '#FFA000';
+        runBtn.disabled = true;
+        loopBtn.disabled = true;
+    } else {
+        runBtn.disabled = false;
+        loopBtn.disabled = false;
+    }
+    updateUpscaleButton();
+}
+
+async function upscaleCurrentImage() {
+    if (totalImages === 0 || upscaling) return;
+    if (!upscalerAvailable) {
+        showAlert('No upscaler workflow found. Export your upscaler workflow as API format and save it as "upscaler_api.json" in the custom node folder.', 'Upscale');
+        return;
+    }
+    closeSaveMenu();
+    const index = currentIndex - 1;
+    try {
+        const resp = await fetch('/inx/upscale', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index: index })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            showAlert((data && data.message) || 'Could not start the upscale.', 'Upscale');
+        }
+    } catch (e) {
+        showAlert('Could not start the upscale.', 'Upscale');
     }
 }
 

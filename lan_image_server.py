@@ -32,6 +32,9 @@ HISTORY_EPOCH = uuid.uuid4().hex
 NEXT_IMAGE_INDEX = 1
 SERVER_INITIALIZED = False
 
+UPSCALER_TEMPLATE_PATH = os.path.join(NODE_DIR, "upscaler_api.json")
+UPSCALER_PENDING = None
+
 LAST_PROMPT_INFO = None
 LOOP_ACTIVE = False
 IS_RUNNING = False
@@ -77,6 +80,16 @@ RES_CUSTOM_HEIGHT = 1224
 PRESETS_DIR = os.path.join(NODE_DIR, "presets")
 CURRENT_PRESET = None
 
+def _image_key(name):
+    """Sort key for a gallery filename: (base index, upscale sub-index)."""
+    match = re.match(r"img_(\d+)(?:_(\d+))?\.png$", name)
+    if not match:
+        return None
+    base = int(match.group(1))
+    sub = int(match.group(2)) if match.group(2) else 0
+    return (base, sub)
+
+
 def ensure_temp_dir():
     """Ensures the temp directory exists and restores any images from a previous session."""
     global SERVER_INITIALIZED, HISTORY_FILES, NEXT_IMAGE_INDEX
@@ -87,13 +100,13 @@ def ensure_temp_dir():
 
     entries = []
     for name in os.listdir(TEMP_DIR):
-        match = re.match(r"img_(\d+)\.png$", name)
-        if match:
-            entries.append((int(match.group(1)), os.path.join(TEMP_DIR, name)))
+        key = _image_key(name)
+        if key:
+            entries.append((key, os.path.join(TEMP_DIR, name)))
     entries.sort(key=lambda item: item[0])
 
     HISTORY_FILES = [path for _, path in entries]
-    NEXT_IMAGE_INDEX = (entries[-1][0] + 1) if entries else 1
+    NEXT_IMAGE_INDEX = (max(key[0] for key, _ in entries) + 1) if entries else 1
     SERVER_INITIALIZED = True
 
 
@@ -500,8 +513,117 @@ def apply_preset(payload):
     SETTINGS_REVISION += 1
 
 
+# ------------------------------------------------------------------
+# Upscaler (external API workflow)
+# ------------------------------------------------------------------
+
+def _load_upscaler_template():
+    try:
+        with open(UPSCALER_TEMPLATE_PATH, "r", encoding="utf-8") as f:
+            template = json.load(f)
+        return template if isinstance(template, dict) and template else None
+    except (OSError, ValueError):
+        return None
+
+
+def _upscaler_loader_id(template):
+    """Finds the LoadImage node that provides the upscaler's input image."""
+    for node_id, node in template.items():
+        if isinstance(node, dict) and node.get("class_type") == "LoadImage":
+            return node_id
+    return None
+
+
+def _upscaler_ready():
+    template = _load_upscaler_template()
+    return bool(template) and _upscaler_loader_id(template) is not None
+
+
+def _resolve_output_path(info):
+    kind = info.get("type", "temp")
+    if kind == "output":
+        base = folder_paths.get_output_directory()
+    elif kind == "input":
+        base = folder_paths.get_input_directory()
+    else:
+        base = folder_paths.get_temp_directory()
+    return os.path.join(base, info.get("subfolder", ""), info.get("filename", ""))
+
+
+def _next_upscale_name(source_path):
+    """Names the upscaled image so it sorts right after the source (base_sub)."""
+    key = _image_key(os.path.basename(source_path)) or (NEXT_IMAGE_INDEX, 0)
+    base = key[0]
+    used_subs = []
+    try:
+        for name in os.listdir(TEMP_DIR):
+            other = _image_key(name)
+            if other and other[0] == base and other[1] > 0:
+                used_subs.append(other[1])
+    except OSError:
+        pass
+    sub = (max(used_subs) + 1) if used_subs else 1
+    return f"img_{base:05d}_{sub:02d}.png"
+
+
+async def _run_upscale_watch(prompt_id, insert_at, input_file, source_path):
+    global UPSCALER_PENDING, HISTORY_FILES, HISTORY_EPOCH
+
+    entry = None
+    deadline = time.time() + 3600.0
+    while time.time() < deadline:
+        await asyncio.sleep(1.0)
+        try:
+            history = PromptServer.instance.prompt_queue.get_history(prompt_id=prompt_id)
+        except Exception:
+            history = None
+        if history and prompt_id in history:
+            entry = history[prompt_id]
+            break
+
+    try:
+        image_info = None
+        if entry:
+            for output in (entry.get("outputs") or {}).values():
+                if isinstance(output, dict) and output.get("images"):
+                    image_info = output["images"][0]
+                    break
+
+        if image_info:
+            source = _resolve_output_path(image_info)
+            if os.path.isfile(source):
+                name = _next_upscale_name(source_path)
+                dest = os.path.join(TEMP_DIR, name)
+                with open(source, "rb") as src, open(dest, "wb") as dst:
+                    dst.write(src.read())
+
+                position = max(0, min(insert_at, len(HISTORY_FILES)))
+                HISTORY_FILES.insert(position, dest)
+                HISTORY_EPOCH = uuid.uuid4().hex
+                broadcast_json({
+                    "type": "update",
+                    "total": len(HISTORY_FILES),
+                    "epoch": HISTORY_EPOCH,
+                    "focus": position,
+                })
+            else:
+                broadcast_json({"type": "workflow_status", "status": "error", "message": "Upscaled image not found."})
+        else:
+            broadcast_json({"type": "workflow_status", "status": "error", "message": "Upscale produced no image."})
+    finally:
+        try:
+            if input_file and os.path.exists(input_file):
+                os.remove(input_file)
+        except OSError:
+            pass
+        UPSCALER_PENDING = None
+        broadcast_json({"type": "upscale_status", "running": False})
+
+
 async def trigger_run():
     global IS_RUNNING, SKIP_NEXT_CAPTURE
+    if UPSCALER_PENDING:
+        return False, "An upscale is in progress. Wait for it to finish."
     info = get_active_prompt()
     if not info:
         return False, "No active workflow prompt found. Run the workflow once from ComfyUI first."
@@ -760,6 +882,80 @@ async def handle_delete_image(request):
     return web.json_response({"status": "deleted", "total": len(HISTORY_FILES), "epoch": HISTORY_EPOCH})
 
 
+@PromptServer.instance.routes.post("/inx/upscale")
+async def handle_upscale(request):
+    global UPSCALER_PENDING, NEXT_IMAGE_INDEX, SKIP_NEXT_CAPTURE
+
+    if UPSCALER_PENDING:
+        return web.json_response({"status": "error", "message": "An upscale is already running."}, status=409)
+
+    template = _load_upscaler_template()
+    loader_id = _upscaler_loader_id(template) if template else None
+    if not template or loader_id is None:
+        return web.json_response(
+            {"status": "error", "message": "No upscaler workflow found (upscaler_api.json)."},
+            status=400
+        )
+
+    try:
+        data = await request.json()
+        idx = int(data.get("index"))
+    except (TypeError, ValueError):
+        return web.json_response({"status": "error", "message": "Invalid index."}, status=400)
+
+    if idx < 0 or idx >= len(HISTORY_FILES):
+        return web.json_response({"status": "error", "message": "Image not found."}, status=404)
+
+    source_path = HISTORY_FILES[idx]
+
+    # LoadImage loads from ComfyUI's input folder, so place a copy there.
+    input_dir = folder_paths.get_input_directory()
+    os.makedirs(input_dir, exist_ok=True)
+    input_name = f"inx_upscale_{uuid.uuid4().hex}.png"
+    input_file = os.path.join(input_dir, input_name)
+    try:
+        with open(source_path, "rb") as src, open(input_file, "wb") as dst:
+            dst.write(src.read())
+    except OSError:
+        return web.json_response({"status": "error", "message": "Could not read the image."}, status=400)
+
+    prompt = copy.deepcopy(template)
+    prompt[loader_id].setdefault("inputs", {})["image"] = input_name
+
+    prompt_id = str(uuid.uuid4())
+    number = PromptServer.instance.number
+    PromptServer.instance.number += 1
+    extra_data = {"client_id": "inx-upscale", "create_time": int(time.time() * 1000)}
+
+    try:
+        import execution
+        valid = await execution.validate_prompt(prompt_id, prompt, None)
+    except Exception as e:
+        try:
+            os.remove(input_file)
+        except OSError:
+            pass
+        return web.json_response({"status": "error", "message": f"Validation error: {e}"}, status=400)
+
+    if not valid[0]:
+        try:
+            os.remove(input_file)
+        except OSError:
+            pass
+        error_details = valid[1]
+        message = error_details.get("message", str(error_details)) if isinstance(error_details, dict) else str(error_details)
+        return web.json_response({"status": "error", "message": f"Upscaler validation failed: {message}"}, status=400)
+
+    item = (number, prompt_id, prompt, extra_data, valid[2], {})
+    SKIP_NEXT_CAPTURE = True
+    PromptServer.instance.prompt_queue.put(item)
+
+    UPSCALER_PENDING = {"prompt_id": prompt_id}
+    asyncio.create_task(_run_upscale_watch(prompt_id, idx + 1, input_file, source_path))
+    broadcast_json({"type": "upscale_status", "running": True})
+    return web.json_response({"status": "started", "prompt_id": prompt_id})
+
+
 @PromptServer.instance.routes.get("/inx/ws")
 async def handle_ws(request):
     ws = web.WebSocketResponse()
@@ -774,7 +970,9 @@ async def handle_ws(request):
         "seeds": get_seed_nodes(),
         "settings": settings_state(),
         "presets": list_presets(),
-        "current_preset": CURRENT_PRESET
+        "current_preset": CURRENT_PRESET,
+        "upscaler_available": _upscaler_ready(),
+        "upscale_running": UPSCALER_PENDING is not None
     })
 
     try:
@@ -788,6 +986,9 @@ async def handle_ws(request):
 @PromptServer.instance.routes.post("/inx/run")
 async def handle_run(request):
     global LOOP_ACTIVE
+    if UPSCALER_PENDING:
+        return web.json_response({"status": "error", "message": "An upscale is in progress. Wait for it to finish."}, status=409)
+
     try:
         data = await request.json()
     except Exception:
