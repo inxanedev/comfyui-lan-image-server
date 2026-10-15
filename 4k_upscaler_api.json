@@ -8,25 +8,10 @@
       "title": "Load Image"
     }
   },
-  "6": {
-    "inputs": {
-      "image": [
-        "1",
-        0
-      ]
-    },
-    "class_type": "GetImageSize",
-    "_meta": {
-      "title": "Get Image Size"
-    }
-  },
   "7": {
     "inputs": {
       "seed": 42,
-      "resolution": [
-        "8",
-        1
-      ],
+      "resolution": 2160,
       "max_resolution": 0,
       "batch_size": 1,
       "uniform_batch_size": false,
@@ -53,23 +38,6 @@
     "class_type": "SeedVR2VideoUpscaler",
     "_meta": {
       "title": "SeedVR2 Video Upscaler (v2.5.24)"
-    }
-  },
-  "8": {
-    "inputs": {
-      "expression": "min(min(a, b), 2160)",
-      "values.a": [
-        "6",
-        0
-      ],
-      "values.b": [
-        "6",
-        1
-      ]
-    },
-    "class_type": "ComfyMathExpression",
-    "_meta": {
-      "title": "Math Expression"
     }
   },
   "9": {
