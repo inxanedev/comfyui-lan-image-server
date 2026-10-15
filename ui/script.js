@@ -413,7 +413,9 @@ function onTabsPointerDown(e) {
     const g = tabsGeometry();
     if (g.tabs.length === 0) return;
 
-    tabsDrag = { pointerId: e.pointerId, startX: e.clientX, dragging: false };
+    let startIndex = g.tabs.indexOf(currentTab);
+    if (startIndex < 0) startIndex = 0;
+    tabsDrag = { pointerId: e.pointerId, startX: e.clientX, dragging: false, currentIndex: startIndex };
     document.addEventListener('pointermove', onTabsPointerMove, { passive: false });
     document.addEventListener('pointerup', onTabsPointerUp);
     document.addEventListener('pointercancel', onTabsPointerUp);
@@ -430,7 +432,17 @@ function onTabsPointerMove(e) {
     }
 
     if (e.cancelable) e.preventDefault();
+    const g = tabsGeometry();
     const pos = tabsPositionAt(e.clientX);
+
+    // Switch as soon as the highlight is mostly over another tab so the user
+    // sees the content they are dragging to.
+    const nearest = Math.max(0, Math.min(g.tabs.length - 1, Math.round(pos)));
+    if (nearest !== tabsDrag.currentIndex) {
+        tabsDrag.currentIndex = nearest;
+        switchTab(g.tabs[nearest]);
+    }
+
     if (tabIndicatorEl) tabIndicatorEl.style.transform = `translateX(${pos * 100}%)`;
 }
 
@@ -462,6 +474,118 @@ function initTabsDrag() {
     // Capture phase to block the tab button's onclick right after a drag.
     tabsEl.addEventListener('click', (e) => {
         if (Date.now() < tabsSuppressClickUntil) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+    }, true);
+}
+
+/* ---------- Draggable accordions ---------- */
+
+let accDrag = null;
+let accSuppressClickUntil = 0;
+
+function closeOtherAccordions(item) {
+    const openItems = document.querySelectorAll('#promptContainer .acc-item.open');
+    openItems.forEach((other) => {
+        if (other === item) return;
+        other.classList.remove('open');
+        const header = other.querySelector('.acc-header');
+        if (header) header.setAttribute('aria-expanded', 'false');
+    });
+}
+
+function onAccPointerDown(e) {
+    if (accDrag) return;
+    if (e.button !== undefined && e.button !== 0) return;
+
+    const header = e.currentTarget;
+    const item = header.closest('.acc-item');
+    if (!item) return;
+    const body = item.querySelector('.acc-body');
+    const inner = item.querySelector('.acc-body-inner');
+    if (!body || !inner) return;
+
+    const wasOpen = item.classList.contains('open');
+    const contentH = inner.offsetHeight;
+    const maxH = DESKTOP_MQ.matches ? contentH : Math.min(contentH, window.innerHeight * 0.8);
+
+    accDrag = {
+        pointerId: e.pointerId,
+        item: item,
+        header: header,
+        body: body,
+        startY: e.clientY,
+        wasOpen: wasOpen,
+        startH: wasOpen ? body.getBoundingClientRect().height : 0,
+        maxH: maxH,
+        lastH: wasOpen ? body.getBoundingClientRect().height : 0,
+        dragging: false
+    };
+
+    document.addEventListener('pointermove', onAccPointerMove, { passive: false });
+    document.addEventListener('pointerup', onAccPointerUp);
+    document.addEventListener('pointercancel', onAccPointerUp);
+}
+
+function onAccPointerMove(e) {
+    if (!accDrag || e.pointerId !== accDrag.pointerId) return;
+
+    const dy = e.clientY - accDrag.startY;
+    if (!accDrag.dragging) {
+        if (Math.abs(dy) < 6) return;
+        accDrag.dragging = true;
+        accDrag.body.style.transition = 'none';
+    }
+
+    if (e.cancelable) e.preventDefault();
+    const h = Math.max(0, Math.min(accDrag.maxH, accDrag.startH + dy));
+    accDrag.body.style.maxHeight = h + 'px';
+    accDrag.body.style.opacity = accDrag.maxH ? String(h / accDrag.maxH) : '0';
+    accDrag.lastH = h;
+}
+
+function onAccPointerUp(e) {
+    if (!accDrag || e.pointerId !== accDrag.pointerId) return;
+
+    const drag = accDrag;
+    accDrag = null;
+    document.removeEventListener('pointermove', onAccPointerMove);
+    document.removeEventListener('pointerup', onAccPointerUp);
+    document.removeEventListener('pointercancel', onAccPointerUp);
+
+    if (!drag.dragging) return; // a tap -> let the header's click toggle it
+
+    // Block the click the browser fires after a drag.
+    accSuppressClickUntil = Date.now() + 400;
+    const willOpen = drag.lastH > drag.maxH / 2;
+
+    // Commit the open/closed state first, then hand sizing back to CSS and let
+    // it transition from the released drag height.
+    if (willOpen) {
+        closeOtherAccordions(drag.item);
+        drag.item.classList.add('open');
+        drag.header.setAttribute('aria-expanded', 'true');
+    } else {
+        drag.item.classList.remove('open');
+        drag.header.setAttribute('aria-expanded', 'false');
+    }
+
+    drag.body.style.transition = '';
+    void drag.body.offsetHeight; // flush the committed state before clearing inline sizes
+    drag.body.style.maxHeight = '';
+    drag.body.style.opacity = '';
+}
+
+function initAccordionDrag() {
+    if (!promptContainer) return;
+
+    promptContainer.querySelectorAll('.acc-header').forEach((header) => {
+        header.addEventListener('pointerdown', onAccPointerDown);
+    });
+
+    promptContainer.addEventListener('click', (e) => {
+        if (Date.now() < accSuppressClickUntil) {
             e.stopPropagation();
             e.preventDefault();
         }
@@ -2412,6 +2536,7 @@ initWheelNavigation();
 initCompareGestures();
 initPreviewGestures();
 initTabsDrag();
+initAccordionDrag();
 initSimpleMode();
 updateTabIndicator();
 switchTab(simpleMode ? 'live' : 'gallery');

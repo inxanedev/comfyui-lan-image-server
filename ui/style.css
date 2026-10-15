@@ -642,9 +642,12 @@ body {
     font-size: 15px;
     font-weight: 600;
     letter-spacing: 0.2px;
-    cursor: pointer;
+    cursor: grab;
     text-align: left;
     -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
     transition: background 0.2s ease;
 }
 

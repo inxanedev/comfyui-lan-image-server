@@ -135,7 +135,7 @@ One node that outputs all of the generation settings, which you then control fro
 
 ## Using the Web UI
 
-The panel has three tabs: **Gallery**, **Live**, and **Settings**. Tap a tab to switch, or just **drag across the tab bar** — the highlight follows your finger and snaps to the nearest tab when you let go.
+The panel has three tabs: **Gallery**, **Live**, and **Settings**. Tap a tab to switch, or **drag across the tab bar** — the highlight follows your finger, the panel switches to whichever tab it's mostly over, and it snaps into place when you let go.
 
 ### Gallery
 Browse every image generated this session. Use **Prev** / **Next** and the counter (e.g. `3 / 7`) — the buttons stretch across the bar for easy tapping. On a touch screen, **swipe left/right** to move between images; on a computer, **scroll the mouse wheel up/down** over the image. Pinch to zoom, drag to pan. **Double-tap (or double-click) an image** to view it full-width against a blurred backdrop; there you can **pinch to zoom and drag to pan** and the zoom/position stays put (scroll to zoom on a computer). **Double-tap the image** or tap the backdrop to close, or press the phone's **Back** button (this works in the **Live** tab too). The gallery **persists across restarts**, so nothing is lost when ComfyUI is closed.
@@ -152,7 +152,7 @@ The real-time sampler preview, with the current **step counter** (e.g. `12 / 20`
 ### Settings
 At the top is the **Simple Mode** switch. Turning it on hides the **Gallery** tab, the **Run / Run (Instant) / Cancel** bar, and every other Settings section — leaving only the **Live** preview (and the newest full-res image). The panel then works as a clean second display; everything (history, settings, generation) keeps running in the background, so you can flip it back off at any time.
 
-Below that, an expandable list of sections — only one opens at a time. What you see depends on which `inx` nodes are in your workflow:
+Below that, an expandable list of sections — **tap a header to open it, or drag a header up/down to open and close it** (only one stays open at a time). What you see depends on which `inx` nodes are in your workflow:
 
 - **Presets** — save the current **Generation** settings and seed under a name. Pick a preset from the dropdown to load it, choose **None** to unload (back to defaults), and use **Save** / **Delete**. Saving while a preset is loaded asks whether to overwrite it or save a new one.
 - **Generation** — appears with `Fetch Generation Settings (LAN)`. Edit the **prompt** and **negative**, the **size** (aspect ratio + megapixels, or tick **Custom** for exact pixels — with a live size preview such as `1000x1000 px`), plus **Steps**, **CFG**, **Sampler** and **Scheduler**. A **Reset to defaults** button clears everything. Changes save automatically and apply to the next run.
