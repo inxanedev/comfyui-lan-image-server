@@ -1493,7 +1493,7 @@ function showPrompt(message, defaultValue, options) {
 }
 
 async function killServer() {
-    if (!(await showConfirm("Clear the image history and reset all settings to defaults?", { title: 'Clear Images', confirmText: 'Clear', danger: true }))) {
+    if (!(await showConfirm("Delete all gallery images? This removes the files from disk. Your generation settings and presets are kept.", { title: 'Clear Images', confirmText: 'Delete All', danger: true }))) {
         return;
     }
     fetch('/inx/kill_server', { method: 'POST' });

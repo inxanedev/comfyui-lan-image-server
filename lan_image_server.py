@@ -1084,23 +1084,8 @@ async def kill_server_endpoint(request):
     NEXT_IMAGE_INDEX = 1
     HISTORY_EPOCH = uuid.uuid4().hex
 
-    # Reset remote overrides so a fresh session never leaks settings into another workflow.
-    _reset_settings()
-
-    payloads = [
-        {"type": "cleared", "epoch": HISTORY_EPOCH},
-        {"type": "seed_update", "seeds": get_seed_nodes()},
-        {"type": "settings_update", "settings": settings_state()},
-        {"type": "presets_update", "presets": list_presets(), "current": CURRENT_PRESET},
-    ]
-
-    for ws in list(CONNECTED_WEBSOCKETS):
-        for payload in payloads:
-            try:
-                await ws.send_json(payload)
-            except Exception:
-                pass
-
+    # Only the gallery is cleared; generation settings and presets are left untouched.
+    broadcast_json({"type": "cleared", "epoch": HISTORY_EPOCH})
     return web.json_response({"status": "cleared", "epoch": HISTORY_EPOCH})
 
 # ------------------------------------------------------------------
