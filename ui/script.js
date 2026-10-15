@@ -1460,6 +1460,42 @@ function updateResBadge() {
     resBadge.classList.toggle('visible', show);
 }
 
+async function applyResolutionToSettings() {
+    if (currentTab !== 'gallery' || totalImages === 0) return;
+    if (img.style.display === 'none' || !img.naturalWidth || !img.naturalHeight) return;
+
+    const width = img.naturalWidth;
+    const height = img.naturalHeight;
+
+    if (!(await showConfirm(`Use ${width}x${height} for the Custom Size?`, {
+        title: 'Set Custom Size',
+        confirmText: 'Apply'
+    }))) {
+        return;
+    }
+
+    const customEl = document.getElementById('resCustom');
+    const wEl = document.getElementById('resWidth');
+    const hEl = document.getElementById('resHeight');
+    if (!customEl || !wEl || !hEl) return;
+
+    customEl.checked = true;
+    wEl.value = String(width);
+    hEl.value = String(height);
+    settingsDirty = true;
+    updateGenerationUI();
+    await flushSettings();
+
+    status.textContent = `Size set to ${width}x${height}`;
+    status.style.color = '#4CAF50';
+    setTimeout(() => {
+        if (status.textContent.startsWith('Size set')) {
+            status.textContent = 'Ready';
+            status.style.color = '#4CAF50';
+        }
+    }, 2500);
+}
+
 /* ---------- Before / after comparison ---------- */
 
 function setComparePos(percent) {
