@@ -27,6 +27,9 @@ const runBtn = document.getElementById('runBtn');
 const loopBtn = document.getElementById('loopBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 const galleryBar = document.getElementById('galleryBar');
+const saveBar = document.getElementById('saveBar');
+const downloadBtn = document.getElementById('downloadBtn');
+const stripMetadata = document.getElementById('stripMetadata');
 const workflowBar = document.getElementById('workflowBar');
 
 let currentTab = 'gallery';
@@ -290,16 +293,19 @@ function switchTab(tab) {
         viewer.style.display = 'flex';
         promptContainer.style.display = 'none';
         galleryBar.style.display = 'flex';
+        saveBar.style.display = 'flex';
         updateGalleryImage();
     } else if (tab === 'live') {
         viewer.style.display = 'flex';
         promptContainer.style.display = 'none';
         galleryBar.style.display = 'none';
+        saveBar.style.display = 'none';
         updateLiveImage();
     } else if (tab === 'prompt') {
         viewer.style.display = 'none';
         promptContainer.style.display = 'flex';
         galleryBar.style.display = 'none';
+        saveBar.style.display = 'none';
     }
 }
 
@@ -805,6 +811,7 @@ async function updateGalleryImage() {
         counter.textContent = '0 / 0';
         prevBtn.disabled = true;
         nextBtn.disabled = true;
+        downloadBtn.disabled = true;
         displayedImageKey = null;
         return;
     }
@@ -812,6 +819,7 @@ async function updateGalleryImage() {
     counter.textContent = `${currentIndex} / ${totalImages}`;
     prevBtn.disabled = (currentIndex <= 1);
     nextBtn.disabled = (currentIndex >= totalImages);
+    downloadBtn.disabled = false;
 
     const index = currentIndex - 1;
     const key = `gallery:${imageEpoch}:${index}`;
@@ -979,6 +987,31 @@ function connectWS() {
     };
 
     ws.onerror = () => ws.close();
+}
+
+async function downloadCurrentImage() {
+    if (totalImages === 0) return;
+    const index = currentIndex - 1;
+    const clean = stripMetadata && stripMetadata.checked;
+    downloadBtn.disabled = true;
+    try {
+        const url = `/inx/image?index=${index}&v=${encodeURIComponent(imageEpoch)}${clean ? '&clean=1' : ''}`;
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('download failed');
+        const blob = await resp.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = `inx_${String(currentIndex).padStart(5, '0')}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    } catch (e) {
+        alert('Could not save the image.');
+    } finally {
+        downloadBtn.disabled = (totalImages === 0);
+    }
 }
 
 function killServer() {

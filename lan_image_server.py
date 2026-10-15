@@ -379,13 +379,26 @@ async def handle_ui_asset(request):
 @PromptServer.instance.routes.get("/inx/image")
 async def handle_image(request):
     index_param = request.query.get("index", None)
-    
+    clean = request.query.get("clean", None) in ("1", "true", "yes")
+
     if not HISTORY_FILES:
         return web.Response(status=404, text="No images available.")
 
     try:
         idx = int(index_param) if index_param is not None else len(HISTORY_FILES) - 1
         filepath = HISTORY_FILES[idx]
+
+        if clean:
+            # Re-encode without any PNG text chunks so workflow/prompt metadata is stripped.
+            with Image.open(filepath) as image:
+                buffer = io.BytesIO()
+                image.save(buffer, format='PNG', compress_level=4)
+            return web.Response(
+                body=buffer.getvalue(),
+                content_type='image/png',
+                headers={"Cache-Control": "no-store"}
+            )
+
         with open(filepath, "rb") as f:
             return web.Response(
                 body=f.read(),
