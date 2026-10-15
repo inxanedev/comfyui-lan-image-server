@@ -25,7 +25,10 @@ const saveMenuBtn = document.getElementById('saveMenuBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
 const deleteImageBtn = document.getElementById('deleteImageBtn');
-const upscaleBtn = document.getElementById('upscaleBtn');
+const upscaleBtns = [
+    document.getElementById('upscaleBtn15'),
+    document.getElementById('upscaleBtn20')
+];
 const reuseBtn = document.getElementById('reuseBtn');
 const copyPromptBtn = document.getElementById('copyPromptBtn');
 const stripMetadata = document.getElementById('stripMetadata');
@@ -1398,9 +1401,13 @@ async function deleteCurrentImage() {
 }
 
 function updateUpscaleButton() {
-    if (!upscaleBtn) return;
-    upscaleBtn.disabled = (!upscalerAvailable || upscaling || totalImages === 0);
-    upscaleBtn.title = upscalerAvailable ? '' : 'Requires the SeedVR2 extension and upscaler_api.json';
+    const disabled = (!upscalerAvailable || upscaling || totalImages === 0);
+    const title = upscalerAvailable ? '' : 'Requires the SeedVR2 extension and upscaler_api.json';
+    for (const btn of upscaleBtns) {
+        if (!btn) continue;
+        btn.disabled = disabled;
+        btn.title = title;
+    }
 }
 
 function applyUpscaleState(data) {
@@ -1557,19 +1564,20 @@ function initCompareGestures() {
     });
 }
 
-async function upscaleCurrentImage() {
+async function upscaleCurrentImage(scale) {
     if (totalImages === 0 || upscaling) return;
     if (!upscalerAvailable) {
         showAlert('No upscaler workflow found. Export your upscaler workflow as API format and save it as "upscaler_api.json" in the custom node folder.', 'Upscale');
         return;
     }
+    if (!Number.isFinite(Number(scale))) scale = 2;
     closeSaveMenu();
     const index = currentIndex - 1;
     try {
         const resp = await fetch('/inx/upscale', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ index: index })
+            body: JSON.stringify({ index: index, scale: scale })
         });
         const data = await resp.json();
         if (!resp.ok) {

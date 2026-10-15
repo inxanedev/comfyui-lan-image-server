@@ -34,6 +34,7 @@ SERVER_INITIALIZED = False
 
 UPSCALER_TEMPLATE_PATH = os.path.join(NODE_DIR, "upscaler_api.json")
 UPSCALER_PENDING = None
+UPSCALE_SCALES = (1.5, 2.0)
 
 LAST_PROMPT_INFO = None
 LOOP_ACTIVE = False
@@ -534,6 +535,50 @@ def _upscaler_loader_id(template):
     return None
 
 
+def _format_scale(scale):
+    """Formats a scale factor for an expression: 2.0 -> '2', 1.5 -> '1.5'."""
+    return str(int(scale)) if float(scale).is_integer() else str(scale)
+
+
+def _apply_upscale_scale(prompt, scale):
+    """Sets the target-resolution multiplier in the upscaler's math expression node.
+
+    The shipped template computes the upscale target as ``min(a, b) * 2``. Changing
+    that multiplier to 1.5 or 2 selects how much the image is enlarged.
+    """
+    target_id = None
+
+    # Prefer the expression node feeding the upscaler node's `resolution` input.
+    for node_id, node in prompt.items():
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("class_type", "")).startswith("SeedVR2"):
+            resolution = (node.get("inputs") or {}).get("resolution")
+            if isinstance(resolution, list) and resolution:
+                target_id = str(resolution[0])
+                break
+
+    if target_id is None or target_id not in prompt:
+        for node_id, node in prompt.items():
+            if isinstance(node, dict) and node.get("class_type") == "ComfyMathExpression":
+                target_id = node_id
+                break
+
+    node = prompt.get(target_id) if target_id is not None else None
+    if not isinstance(node, dict) or node.get("class_type") != "ComfyMathExpression":
+        return
+
+    inputs = node.setdefault("inputs", {})
+    expression = inputs.get("expression")
+    if not isinstance(expression, str):
+        return
+    inputs["expression"] = re.sub(
+        r"(\*\s*)([\d.]+)",
+        lambda m: m.group(1) + _format_scale(scale),
+        expression
+    )
+
+
 def _upscaler_ready():
     template = _load_upscaler_template()
     if not template or _upscaler_loader_id(template) is None:
@@ -970,6 +1015,13 @@ async def handle_upscale(request):
     except (TypeError, ValueError):
         return web.json_response({"status": "error", "message": "Invalid index."}, status=400)
 
+    try:
+        scale = float(data.get("scale", 2.0))
+    except (TypeError, ValueError):
+        scale = 2.0
+    if scale not in UPSCALE_SCALES:
+        scale = 2.0
+
     if idx < 0 or idx >= len(HISTORY_FILES):
         return web.json_response({"status": "error", "message": "Image not found."}, status=404)
 
@@ -988,6 +1040,7 @@ async def handle_upscale(request):
 
     prompt = copy.deepcopy(template)
     prompt[loader_id].setdefault("inputs", {})["image"] = input_name
+    _apply_upscale_scale(prompt, scale)
 
     prompt_id = str(uuid.uuid4())
     number = PromptServer.instance.number
