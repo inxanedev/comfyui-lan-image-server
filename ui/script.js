@@ -8,6 +8,8 @@ const counter = document.getElementById('counter');
 const tabGallery = document.getElementById('tabGallery');
 const tabLive = document.getElementById('tabLive');
 const tabPrompt = document.getElementById('tabPrompt');
+const tabsEl = document.getElementById('tabs');
+const tabIndicatorEl = document.getElementById('tabIndicator');
 const controls = document.getElementById('controls');
 
 const promptContainer = document.getElementById('promptContainer');
@@ -379,11 +381,91 @@ function updateTabIndicator() {
     const tabs = visibleTabs();
     let index = tabs.indexOf(currentTab);
     if (index < 0) index = 0;
-    const indicator = document.getElementById('tabIndicator');
-    if (indicator) {
-        indicator.style.width = `calc((100% - 8px) / ${tabs.length})`;
-        indicator.style.transform = `translateX(${index * 100}%)`;
+    if (tabIndicatorEl) {
+        tabIndicatorEl.style.width = `calc((100% - 8px) / ${tabs.length})`;
+        tabIndicatorEl.style.transform = `translateX(${index * 100}%)`;
     }
+}
+
+/* ---------- Draggable tab navigation ---------- */
+
+let tabsDrag = null;
+let tabsSuppressClickUntil = 0;
+
+function tabsGeometry() {
+    const tabs = visibleTabs();
+    const rect = tabsEl.getBoundingClientRect();
+    const innerW = Math.max(1, rect.width - 8);
+    return { tabs: tabs, rect: rect, tabW: innerW / tabs.length };
+}
+
+// Continuous indicator position (0 = first tab, N-1 = last) for a pointer x.
+function tabsPositionAt(clientX) {
+    const g = tabsGeometry();
+    const pos = (clientX - (g.rect.left + 4)) / g.tabW - 0.5;
+    return Math.max(0, Math.min(g.tabs.length - 1, pos));
+}
+
+function onTabsPointerDown(e) {
+    if (tabsDrag) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    if (!tabsEl) return;
+    const g = tabsGeometry();
+    if (g.tabs.length === 0) return;
+
+    tabsDrag = { pointerId: e.pointerId, startX: e.clientX, dragging: false };
+    document.addEventListener('pointermove', onTabsPointerMove, { passive: false });
+    document.addEventListener('pointerup', onTabsPointerUp);
+    document.addEventListener('pointercancel', onTabsPointerUp);
+}
+
+function onTabsPointerMove(e) {
+    if (!tabsDrag || e.pointerId !== tabsDrag.pointerId) return;
+
+    const dx = e.clientX - tabsDrag.startX;
+    if (!tabsDrag.dragging) {
+        if (Math.abs(dx) < 6) return;
+        tabsDrag.dragging = true;
+        if (tabIndicatorEl) tabIndicatorEl.style.transition = 'none';
+    }
+
+    if (e.cancelable) e.preventDefault();
+    const pos = tabsPositionAt(e.clientX);
+    if (tabIndicatorEl) tabIndicatorEl.style.transform = `translateX(${pos * 100}%)`;
+}
+
+function onTabsPointerUp(e) {
+    if (!tabsDrag || e.pointerId !== tabsDrag.pointerId) return;
+    const wasDragging = tabsDrag.dragging;
+    tabsDrag = null;
+
+    document.removeEventListener('pointermove', onTabsPointerMove);
+    document.removeEventListener('pointerup', onTabsPointerUp);
+    document.removeEventListener('pointercancel', onTabsPointerUp);
+
+    if (!wasDragging) return;
+
+    // Swallow the click the browser emits after a drag.
+    tabsSuppressClickUntil = Date.now() + 400;
+    if (tabIndicatorEl) tabIndicatorEl.style.transition = '';
+
+    const g = tabsGeometry();
+    const index = Math.round(tabsPositionAt(e.clientX));
+    switchTab(g.tabs[index]);
+}
+
+function initTabsDrag() {
+    if (!tabsEl) return;
+
+    tabsEl.addEventListener('pointerdown', onTabsPointerDown);
+
+    // Capture phase to block the tab button's onclick right after a drag.
+    tabsEl.addEventListener('click', (e) => {
+        if (Date.now() < tabsSuppressClickUntil) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+    }, true);
 }
 
 function applySimpleMode() {
@@ -2329,6 +2411,7 @@ initZoomGestures();
 initWheelNavigation();
 initCompareGestures();
 initPreviewGestures();
+initTabsDrag();
 initSimpleMode();
 updateTabIndicator();
 switchTab(simpleMode ? 'live' : 'gallery');
