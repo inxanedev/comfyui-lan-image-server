@@ -1224,13 +1224,13 @@ body {
 @media (min-width: 900px) {
     body {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         grid-template-rows: auto minmax(0, 1fr) auto;
         grid-template-areas:
             "topbar settings"
             "viewer settings"
             "controls settings";
-        max-width: 1500px;
+        max-width: 1600px;
         margin: 0 auto;
     }
 
@@ -1271,6 +1271,21 @@ body {
 
     /* Let accordions expand fully inside the scrollable docked panel. */
     .acc-item.open .acc-body {
+        max-height: none;
+        overflow: visible;
+    }
+
+    /* More room for long prompts on a wide screen. */
+    #genText {
+        min-height: 220px;
+    }
+
+    #genNegative {
+        min-height: 120px;
+    }
+
+    /* No inner scrollbar for the seed list — the docked panel scrolls instead. */
+    .seed-list {
         max-height: none;
         overflow: visible;
     }
