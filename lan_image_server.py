@@ -105,7 +105,7 @@ if original_send_sync:
             if event == "progress" and isinstance(data, dict):
                 broadcast_json({"type": "progress", "value": data.get("value"), "max": data.get("max")})
             elif event == "executing" and isinstance(data, dict) and data.get("node") is None:
-                broadcast_json({"type": "progress", "value": None, "max": None})
+                broadcast_json({"type": "progress", "value": None, "max": None, "done": True})
         except Exception:
             pass
         return original_send_sync(event, data, sid=sid)

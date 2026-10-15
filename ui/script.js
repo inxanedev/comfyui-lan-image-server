@@ -50,6 +50,7 @@ let loopActive = false;
 let seedNodes = [];
 let progressValue = null;
 let progressMax = null;
+let runInProgress = false;
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
@@ -363,6 +364,7 @@ async function runOnce() {
         } else {
             status.textContent = 'Generating...';
             status.style.color = '#2196F3';
+            runInProgress = true;
         }
     } catch (e) {
         alert('Network error triggering run.');
@@ -404,6 +406,7 @@ async function toggleLoop() {
                 status.style.color = '#F44336';
             } else {
                 updateWorkflowUI({ loop_active: true });
+                runInProgress = true;
             }
         } catch (e) {
             alert('Network error starting loop.');
@@ -416,6 +419,7 @@ async function toggleLoop() {
 }
 
 async function cancelExecution() {
+    runInProgress = false;
     cancelBtn.disabled = true;
     status.textContent = 'Cancelling...';
     status.style.color = '#F44336';
@@ -1004,7 +1008,16 @@ function connectWS() {
                 } else if (data.type === 'resolution_update') {
                     applyResolutionState(data);
                 } else if (data.type === 'progress') {
-                    setProgress(data.value, data.max);
+                    if (data.value == null) {
+                        setProgress(null);
+                        if (data.done && runInProgress && !loopActive) {
+                            runInProgress = false;
+                            status.textContent = 'Done.';
+                            status.style.color = '#30D158';
+                        }
+                    } else {
+                        setProgress(data.value, data.max);
+                    }
                 } else if (data.type === 'workflow_status') {
                     updateWorkflowUI(data);
                 } else if (data.type === 'cleared') {
