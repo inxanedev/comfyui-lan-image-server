@@ -41,6 +41,8 @@ const compareBefore = document.getElementById('compareBefore');
 const compareAfter = document.getElementById('compareAfter');
 const compareDivider = document.getElementById('compareDivider');
 const resBadge = document.getElementById('resBadge');
+const previewOverlay = document.getElementById('previewOverlay');
+const previewImage = document.getElementById('previewImage');
 const presetSelect = document.getElementById('presetSelect');
 const presetDeleteBtn = document.getElementById('presetDeleteBtn');
 const presetNotice = document.getElementById('presetNotice');
@@ -72,6 +74,11 @@ let compareLoading = false;
 let compareDragging = false;
 let compareStart = null;
 let compareOriginalUrl = null;
+
+let previewOpen = false;
+let lastTapTime = 0;
+let lastTapX = 0;
+let lastTapY = 0;
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
@@ -225,7 +232,8 @@ function initZoomGestures() {
                 startY: e.touches[0].clientY,
                 startTx: zoomTx,
                 startTy: zoomTy,
-                swipeEligible: (currentTab === 'gallery' && zoomScale <= 1)
+                swipeEligible: (currentTab === 'gallery' && zoomScale <= 1),
+                startOnBadges: !!(e.target && e.target.closest && e.target.closest('#badges'))
             };
         }
     }, { passive: false });
@@ -290,13 +298,29 @@ function initZoomGestures() {
             gesture = null;
             resetZoom();
 
+            const changed = e.changedTouches && e.changedTouches[0];
+            let didSwipe = false;
+
             // Swipe left/right in the Gallery to move between images (only when not zoomed).
             if (finished && finished.swipeEligible && finished.mode === 'pan'
-                && currentTab === 'gallery' && e.changedTouches && e.changedTouches[0]) {
-                const dx = e.changedTouches[0].clientX - finished.startX;
-                const dy = e.changedTouches[0].clientY - finished.startY;
+                && currentTab === 'gallery' && changed) {
+                const dx = changed.clientX - finished.startX;
+                const dy = changed.clientY - finished.startY;
                 if (Math.abs(dx) >= 45 && Math.abs(dx) > Math.abs(dy) * 1.4) {
                     navigate(dx < 0 ? 1 : -1);
+                    didSwipe = true;
+                }
+            }
+
+            // A quick double tap opens the image preview (Gallery / Live only).
+            if (!didSwipe && finished && finished.mode === 'pan' && !finished.startOnBadges
+                && changed && (currentTab === 'gallery' || currentTab === 'live')) {
+                const dx = changed.clientX - finished.startX;
+                const dy = changed.clientY - finished.startY;
+                if (Math.hypot(dx, dy) <= 12) {
+                    registerTap(changed.clientX, changed.clientY);
+                } else {
+                    lastTapTime = 0;
                 }
             }
         }
@@ -1301,6 +1325,7 @@ function connectWS() {
                 } else if (data.type === 'cleared') {
                     syncEpoch(data.epoch);
                     closeComparison();
+                    closeImagePreview(true);
                     totalImages = 0;
                     currentIndex = 0;
                     upscaledIndices = new Set();
@@ -1617,6 +1642,72 @@ function initCompareGestures() {
     });
 }
 
+/* ---------- Full-width image preview ---------- */
+
+function registerTap(x, y) {
+    const now = Date.now();
+    if (now - lastTapTime < 300 && Math.hypot(x - lastTapX, y - lastTapY) < 40) {
+        lastTapTime = 0;
+        openImagePreview();
+    } else {
+        lastTapTime = now;
+        lastTapX = x;
+        lastTapY = y;
+    }
+}
+
+function openImagePreview() {
+    if (previewOpen) return;
+    if (currentTab !== 'gallery' && currentTab !== 'live') return;
+    if (!img || img.style.display === 'none' || !img.src) return;
+
+    previewImage.src = img.src;
+    previewOverlay.classList.add('open');
+    previewOverlay.setAttribute('aria-hidden', 'false');
+    previewOpen = true;
+    document.addEventListener('keydown', onPreviewKeydown, true);
+
+    // Let the phone's back button (popstate) close the preview.
+    try { history.pushState({ inxPreview: true }, ''); } catch (e) {}
+}
+
+function closeImagePreview(fromPopState) {
+    if (!previewOpen) return;
+    previewOpen = false;
+    lastTapTime = 0;
+    previewOverlay.classList.remove('open');
+    previewOverlay.setAttribute('aria-hidden', 'true');
+    document.removeEventListener('keydown', onPreviewKeydown, true);
+    previewImage.removeAttribute('src');
+
+    // Pop the history entry we pushed, unless the back button already did.
+    if (!fromPopState) {
+        try {
+            if (history.state && history.state.inxPreview) history.back();
+        } catch (e) {}
+    }
+}
+
+function onPreviewKeydown(e) {
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        closeImagePreview(false);
+    }
+}
+
+function initPreviewGestures() {
+    if (!previewOverlay) return;
+
+    previewOverlay.addEventListener('click', (e) => {
+        if (e.target === previewOverlay) closeImagePreview(false);
+    });
+
+    viewer.addEventListener('dblclick', (e) => {
+        if (e.target && e.target.closest && e.target.closest('#badges')) return;
+        openImagePreview();
+    });
+}
+
 async function upscaleCurrentImage(scale) {
     if (totalImages === 0 || upscaling) return;
     if (!upscalerAvailable) {
@@ -1925,10 +2016,15 @@ if (DESKTOP_MQ.addEventListener) {
     DESKTOP_MQ.addListener(onLayoutChange);
 }
 
+window.addEventListener('popstate', () => {
+    if (previewOpen) closeImagePreview(true);
+});
+
 img.addEventListener('load', updateResBadge);
 initZoomGestures();
 initWheelNavigation();
 initCompareGestures();
+initPreviewGestures();
 initSimpleMode();
 updateTabIndicator();
 switchTab(simpleMode ? 'live' : 'gallery');

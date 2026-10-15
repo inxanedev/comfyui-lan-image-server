@@ -427,6 +427,43 @@ body {
     transform: scale(0.94);
 }
 
+/* ---------- Full-width image preview overlay ---------- */
+
+.preview-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 8px calc(env(safe-area-inset-bottom, 0px) + 10px);
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(26px) saturate(160%);
+    -webkit-backdrop-filter: blur(26px) saturate(160%);
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.preview-overlay.open {
+    display: flex;
+    opacity: 1;
+}
+
+.preview-image {
+    display: block;
+    max-width: 96vw;
+    max-height: 92vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    -webkit-user-drag: none;
+    user-select: none;
+}
+
 /* ---------- Before / after comparison overlay ---------- */
 
 .compare-overlay {

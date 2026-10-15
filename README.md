@@ -138,7 +138,7 @@ One node that outputs all of the generation settings, which you then control fro
 The panel has three tabs: **Gallery**, **Live**, and **Settings**.
 
 ### Gallery
-Browse every image generated this session. Use **Prev** / **Next** and the counter (e.g. `3 / 7`) — the buttons stretch across the bar for easy tapping. On a touch screen, **swipe left/right** to move between images; on a computer, **scroll the mouse wheel up/down** over the image. Pinch to zoom, drag to pan. The gallery **persists across restarts**, so nothing is lost when ComfyUI is closed.
+Browse every image generated this session. Use **Prev** / **Next** and the counter (e.g. `3 / 7`) — the buttons stretch across the bar for easy tapping. On a touch screen, **swipe left/right** to move between images; on a computer, **scroll the mouse wheel up/down** over the image. Pinch to zoom, drag to pan. **Double-tap (or double-click) an image** to view it full-width against a blurred backdrop; tap the backdrop or press the phone's **Back** button to close (this works in the **Live** tab too). The gallery **persists across restarts**, so nothing is lost when ComfyUI is closed.
 
 ![Gallery tab showing a generated image](assets/gallery.png)
 
