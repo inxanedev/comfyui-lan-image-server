@@ -110,6 +110,8 @@ The core node — it streams images to the web panel.
 2. It shows a **preview right inside the node** (like *Preview Image*), so it can replace your existing preview node.
 3. Because it passes the image through, you can **daisy-chain** it: `VAE Decode -> Serve Image on LAN -> Save Image`.
 
+![The Serve Image on LAN node, showing the received image as an in-node preview](assets/node-serve-image.png)
+
 ### `Fetch Generation Settings (LAN)`
 One node that outputs all of the generation settings, which you then control from the web panel. Its input widgets are the **workflow defaults**; anything you change in the panel overrides them for the next run.
 
@@ -126,6 +128,8 @@ One node that outputs all of the generation settings, which you then control fro
 3. Open the **Settings** tab to override any of them remotely. Resolution defaults to 1:1 at 1.5 MP and is configured in the panel.
 
 > **Tip:** if you already have the values on your nodes, you can leave the defaults blank and just wire the outputs — the panel's values take over.
+
+![The Fetch Generation Settings (LAN) node wired to CLIP Text Encode, Empty Latent Image, and KSampler](assets/node-generation-settings.png)
 
 ---
 
