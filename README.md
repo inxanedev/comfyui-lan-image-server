@@ -134,7 +134,7 @@ An expandable list of sections — only one opens at a time. What you see depend
 - **Generation** — appears with `Fetch Generation Settings (LAN)`. Edit the **prompt** and **negative**, the **size** (aspect ratio + megapixels, or tick **Custom** for exact pixels — with a live size preview such as `1000x1000 px`), plus **Steps**, **CFG**, **Sampler** and **Scheduler**. A **Reset to defaults** button clears everything. Changes save automatically and apply to the next run.
 - **Seed (rgthree)** — appears only if a `Seed (rgthree)` node is in the workflow. Per node you can **Set** a fixed seed, roll a **New random** seed, switch to **Random each run**, or **Reset** to the workflow default.
 
-At the bottom of the Settings tab: **Clear Images** (wipes the session gallery *and* resets your overrides) and **Shutdown PC**.
+At the bottom of the Settings tab: **Clear Images** (deletes every gallery image) and **Shutdown PC**. Clearing images leaves your generation settings and presets untouched.
 
 ---
 
@@ -147,7 +147,7 @@ At the bottom of the Settings tab: **Clear Images** (wipes the session gallery *
 - **Presets are just files.** They live as JSON in `custom_nodes/comfyui-lan-image-server/presets/`, so they survive restarts and are easy to copy or back up. That folder is gitignored, so your presets aren't committed.
 - **Only your changes are stored.** Anything you set to the node's default value is treated as "default" rather than an override, so the panel only carries what you actually changed.
 - **`Reuse Settings` reads the PNG.** Each generated image embeds its prompt/workflow, so the panel can pull the prompt, size and seed back out of a good result (unless you saved it with metadata stripped).
-- **The `Clear` button resets your remote settings too.** Along with the image gallery, it clears generation overrides and seed overrides back to their defaults so a fresh session can't leak settings into another workflow.
+- **Clearing images doesn't touch your settings.** `Clear Images` only deletes the gallery files. Your Generation settings, seed and the loaded preset stay as they are — use the presets dropdown (pick **None**) or **Reset to defaults** to change them.
 - **`Shutdown PC` really powers off the machine** (force-closing open apps). Use it deliberately.
 - **No authentication.** Every `/inx/*` endpoint is open to anyone who can reach the address — they can run, cancel, clear, change settings, and **shut down the PC**. Keep it on a trusted LAN and **do not expose it to the internet** (no port forwarding, no public tunnels).
 
