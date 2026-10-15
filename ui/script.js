@@ -24,6 +24,7 @@ const cancelBtn = document.getElementById('cancelBtn');
 const galleryBar = document.getElementById('galleryBar');
 const saveMenu = document.getElementById('saveMenu');
 const saveMenuBtn = document.getElementById('saveMenuBtn');
+const quickMenu = document.getElementById('quickMenu');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
 const deleteImageBtn = document.getElementById('deleteImageBtn');
@@ -2370,6 +2371,173 @@ function onDocumentClickCloseSaveMenu(e) {
     closeSaveMenu();
 }
 
+/* ---------- Long-press quick actions ---------- */
+
+const QUICK_ACTIONS = {
+    save: function () { downloadCurrentImage(); },
+    delete: function () { deleteCurrentImage(); },
+    upscale: function () { upscaleCurrentImage(2); }
+};
+
+const QUICK_LONG_PRESS_MS = 380;
+let quickMenuOpen = false;
+let quickPress = null;
+let quickSuppressClickUntil = 0;
+
+function quickItems() {
+    return quickMenu ? Array.from(quickMenu.querySelectorAll('.quick-item')) : [];
+}
+
+function clearQuickHighlight() {
+    quickItems().forEach(function (item) { item.classList.remove('active'); });
+}
+
+function openQuickMenu() {
+    if (!quickMenu || quickMenuOpen || totalImages === 0) return;
+
+    quickItems().forEach(function (item) {
+        if (item.dataset.quick === 'upscale') {
+            item.disabled = (!upscalerAvailable || upscaling);
+        }
+    });
+
+    closeSaveMenu();
+    quickMenuOpen = true;
+    quickMenu.classList.add('open');
+    quickMenu.setAttribute('aria-hidden', 'false');
+    if (saveMenuBtn) saveMenuBtn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', onQuickDocPointerDown, true);
+}
+
+function closeQuickMenu() {
+    if (!quickMenu) return;
+    quickMenuOpen = false;
+    quickMenu.classList.remove('open');
+    quickMenu.setAttribute('aria-hidden', 'true');
+    clearQuickHighlight();
+    if (saveMenuBtn) saveMenuBtn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', onQuickDocPointerDown, true);
+}
+
+function onQuickDocPointerDown(e) {
+    if (!quickMenuOpen) return;
+    if (quickMenu.contains(e.target)) return;
+    if (saveMenuBtn && saveMenuBtn.contains(e.target)) return;
+    closeQuickMenu();
+}
+
+// Highlights the icon under the pointer and returns it (or null).
+function setQuickHighlight(clientX, clientY) {
+    const el = document.elementFromPoint(clientX, clientY);
+    const item = el && el.closest ? el.closest('.quick-item') : null;
+    const target = (item && !item.disabled) ? item : null;
+    quickItems().forEach(function (candidate) {
+        candidate.classList.toggle('active', candidate === target);
+    });
+    return target;
+}
+
+function triggerQuickAction(name) {
+    const action = QUICK_ACTIONS[name];
+    if (action) action();
+}
+
+function endQuickPress() {
+    if (quickPress && quickPress.timer) clearTimeout(quickPress.timer);
+    quickPress = null;
+    document.removeEventListener('pointermove', onQuickPointerMove);
+    document.removeEventListener('pointerup', onQuickPointerUp);
+    document.removeEventListener('pointercancel', onQuickPointerCancel);
+}
+
+function onQuickPointerDown(e) {
+    if (quickPress) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    if (totalImages === 0) return;
+
+    quickPress = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        longPressed: false,
+        timer: setTimeout(function () {
+            if (!quickPress) return;
+            quickPress.longPressed = true;
+            openQuickMenu();
+            setQuickHighlight(quickPress.startX, quickPress.startY);
+        }, QUICK_LONG_PRESS_MS)
+    };
+
+    document.addEventListener('pointermove', onQuickPointerMove, { passive: false });
+    document.addEventListener('pointerup', onQuickPointerUp);
+    document.addEventListener('pointercancel', onQuickPointerCancel);
+}
+
+function onQuickPointerMove(e) {
+    if (!quickPress || e.pointerId !== quickPress.pointerId) return;
+
+    if (!quickPress.longPressed) {
+        const dx = e.clientX - quickPress.startX;
+        const dy = e.clientY - quickPress.startY;
+        if (Math.hypot(dx, dy) > 10) {
+            // Moved before the timer fired: treat it as normal interaction.
+            endQuickPress();
+        }
+        return;
+    }
+
+    if (e.cancelable) e.preventDefault();
+    setQuickHighlight(e.clientX, e.clientY);
+}
+
+function onQuickPointerUp(e) {
+    if (!quickPress || e.pointerId !== quickPress.pointerId) return;
+    const wasLong = quickPress.longPressed;
+    endQuickPress();
+
+    if (wasLong) {
+        // Keep the menu open; trigger only if released on top of an icon.
+        const item = setQuickHighlight(e.clientX, e.clientY);
+        quickSuppressClickUntil = Date.now() + 400;
+        if (item) {
+            closeQuickMenu();
+            triggerQuickAction(item.dataset.quick);
+        }
+    } else if (quickMenuOpen) {
+        // A plain tap while the quick menu is open just closes it.
+        quickSuppressClickUntil = Date.now() + 400;
+        closeQuickMenu();
+    }
+}
+
+function onQuickPointerCancel(e) {
+    if (!quickPress || e.pointerId !== quickPress.pointerId) return;
+    endQuickPress();
+}
+
+function initQuickMenu() {
+    if (!quickMenu || !saveMenuBtn) return;
+
+    quickItems().forEach(function (item) {
+        item.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (item.disabled) return;
+            closeQuickMenu();
+            triggerQuickAction(item.dataset.quick);
+        });
+    });
+
+    saveMenuBtn.addEventListener('pointerdown', onQuickPointerDown);
+
+    // Swallow the click the browser emits right after a long press.
+    saveMenuBtn.addEventListener('click', function (e) {
+        if (Date.now() < quickSuppressClickUntil) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+    }, true);
+}
+
 /* ---------- Themed modal dialogs ---------- */
 
 let modalResolve = null;
@@ -2537,6 +2705,7 @@ initCompareGestures();
 initPreviewGestures();
 initTabsDrag();
 initAccordionDrag();
+initQuickMenu();
 initSimpleMode();
 updateTabIndicator();
 switchTab(simpleMode ? 'live' : 'gallery');

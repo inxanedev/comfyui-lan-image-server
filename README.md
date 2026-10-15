@@ -142,7 +142,7 @@ Browse every image generated this session. Use **Prev** / **Next** and the count
 
 ![Gallery tab showing a generated image](assets/gallery.png)
 
-The **↓ button** on the right opens the gallery actions: **Save Image**, **Save All** (a `.zip`), **Reuse Settings**, **Copy Prompt**, **Upscale (1.5x)** / **Upscale (2.0x)** (see [Upscaling](#upscaling-seedvr2)), a **Remove metadata** toggle, and **Delete Image** (removes the selected image from the gallery and disk). Images that came out of the upscaler show an **Upscaled** badge — tapping it opens a before/after comparison of the original and the upscaled image. A second badge always shows the current image's **resolution** (e.g. `1920x1080`) — tap it to load that size into **Generation → Custom Size** (it asks for confirmation first).
+The **↓ button** on the right opens the gallery actions: **Save Image**, **Save All** (a `.zip`), **Reuse Settings**, **Copy Prompt**, **Upscale (1.5x)** / **Upscale (2.0x)** (see [Upscaling](#upscaling-seedvr2)), a **Remove metadata** toggle, and **Delete Image** (removes the selected image from the gallery and disk). **Long-press the ↓ button** for quick access to **Save Image**, **Delete Image** and **Upscale (2.0x)** — a small pill of icons pops up above it; drag onto an icon (it grows) and release to trigger it, or lift your finger and tap one. Images that came out of the upscaler show an **Upscaled** badge — tapping it opens a before/after comparison of the original and the upscaled image. A second badge always shows the current image's **resolution** (e.g. `1920x1080`) — tap it to load that size into **Generation → Custom Size** (it asks for confirmation first).
 
 ![Gallery actions menu](assets/gallery-actions.png)
 

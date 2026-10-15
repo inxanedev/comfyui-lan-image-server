@@ -196,6 +196,17 @@
                 <button id="deleteImageBtn" class="btn btn-danger" type="button" onclick="deleteCurrentImage()" disabled>Delete Image</button>
             </div>
         </div>
+        <div id="quickMenu" class="quick-menu" role="menu" aria-hidden="true">
+            <button class="quick-item" type="button" data-quick="save" title="Save Image" aria-label="Save Image">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M5 21h14"></path></svg>
+            </button>
+            <button class="quick-item" type="button" data-quick="delete" title="Delete Image" aria-label="Delete Image">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 14h10l1-14"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
+            </button>
+            <button class="quick-item" type="button" data-quick="upscale" title="Upscale 2.0x" aria-label="Upscale 2.0x">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M9 21H3v-6"></path><path d="M21 3l-7 7"></path><path d="M3 21l7-7"></path></svg>
+            </button>
+        </div>
         <div id="workflowBar" class="control-row">
             <button id="runBtn" class="btn btn-primary" onclick="runOnce()" style="flex: 1;">Run</button>
             <button id="loopBtn" class="btn btn-loop" onclick="toggleLoop()" style="flex: 1.4;">Run (Instant)</button>
