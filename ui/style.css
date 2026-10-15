@@ -784,6 +784,13 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
+.btn.clear-btn {
+    width: 100%;
+    flex-shrink: 0;
+    min-height: 48px;
+    margin-bottom: 10px;
+}
+
 .btn.shutdown-btn {
     width: 100%;
     flex-shrink: 0;
@@ -824,6 +831,10 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+#galleryBar .btn {
+    flex: 1 1 0;
 }
 
 #saveBar {

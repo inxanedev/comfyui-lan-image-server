@@ -129,17 +129,15 @@
             </div>
         </div>
 
+        <button id="killBtn" class="btn btn-danger clear-btn" type="button" onclick="killServer()">Clear Images</button>
         <button id="shutdownBtn" class="btn btn-danger shutdown-btn" type="button" onclick="shutdownPC()">Shutdown PC</button>
     </section>
 
     <footer id="controls">
         <div id="galleryBar" class="control-row">
-            <div class="group">
-                <button id="prevBtn" class="btn" onclick="navigate(-1)" disabled>Prev</button>
-                <span id="counter">0 / 0</span>
-                <button id="nextBtn" class="btn" onclick="navigate(1)" disabled>Next</button>
-            </div>
-            <button id="killBtn" class="btn btn-danger" onclick="killServer()">Clear</button>
+            <button id="prevBtn" class="btn" onclick="navigate(-1)" disabled>Prev</button>
+            <span id="counter">0 / 0</span>
+            <button id="nextBtn" class="btn" onclick="navigate(1)" disabled>Next</button>
         </div>
         <div id="saveBar">
             <button id="downloadBtn" class="btn btn-primary" onclick="downloadCurrentImage()" disabled>Save Image</button>
