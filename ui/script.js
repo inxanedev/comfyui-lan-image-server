@@ -64,6 +64,8 @@ let zoomTx = 0;
 let zoomTy = 0;
 let gesture = null;
 let galleryAnim = null;
+let wheelAccum = 0;
+let wheelLockUntil = 0;
 
 const IMAGE_CACHE_LIMIT = 24;
 const imageCache = new Map();
@@ -288,6 +290,29 @@ function initZoomGestures() {
         gesture = null;
         resetZoom();
     });
+}
+
+function initWheelNavigation() {
+    viewer.addEventListener('wheel', (e) => {
+        if (e.ctrlKey) return; // let ctrl+wheel / trackpad-pinch zoom the page
+        if (currentTab !== 'gallery' || totalImages === 0) return;
+
+        e.preventDefault();
+
+        const now = performance.now();
+        if (now < wheelLockUntil) return;
+
+        // Normalize line/page deltas to pixels so trackpads and mice behave the same.
+        const unit = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 100 : 1);
+        wheelAccum += e.deltaY * unit;
+
+        if (Math.abs(wheelAccum) >= 50) {
+            const direction = wheelAccum > 0 ? 1 : -1;
+            wheelAccum = 0;
+            wheelLockUntil = now + 250;
+            navigate(direction);
+        }
+    }, { passive: false });
 }
 
 const DESKTOP_MQ = window.matchMedia('(min-width: 900px)');
@@ -1672,6 +1697,7 @@ if (DESKTOP_MQ.addEventListener) {
 }
 
 initZoomGestures();
+initWheelNavigation();
 updateTabIndicator();
 switchTab('gallery');
 connectWS();
