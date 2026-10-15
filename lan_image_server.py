@@ -668,7 +668,8 @@ async def handle_post_resolution(request):
 def _do_shutdown():
     try:
         if os.name == "nt":
-            subprocess.Popen(["shutdown", "/s", "/t", "0"])
+            # /f force-closes apps that would otherwise block the shutdown.
+            subprocess.Popen(["shutdown", "/s", "/f", "/t", "0"])
         else:
             subprocess.Popen(["shutdown", "-h", "now"])
     except Exception as e:

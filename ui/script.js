@@ -988,7 +988,7 @@ function killServer() {
 }
 
 async function shutdownPC() {
-    if (!confirm("Shut down the computer running ComfyUI?\n\nThis powers off the PC immediately and cannot be undone from here.")) {
+    if (!confirm("Shut down the computer running ComfyUI?\n\nThis powers off the PC immediately and force-closes any open apps — unsaved work will be lost. It cannot be undone from here.")) {
         return;
     }
     const btn = document.getElementById('shutdownBtn');
