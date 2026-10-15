@@ -27,7 +27,8 @@ const runBtn = document.getElementById('runBtn');
 const loopBtn = document.getElementById('loopBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 const galleryBar = document.getElementById('galleryBar');
-const saveBar = document.getElementById('saveBar');
+const saveMenu = document.getElementById('saveMenu');
+const saveMenuBtn = document.getElementById('saveMenuBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
 const reuseBtn = document.getElementById('reuseBtn');
@@ -297,23 +298,25 @@ function switchTab(tab) {
     tabPrompt.classList.toggle('active', tab === 'prompt');
     updateTabIndicator();
 
+    closeSaveMenu();
+
     if (tab === 'gallery') {
         viewer.style.display = 'flex';
         promptContainer.style.display = 'none';
         galleryBar.style.display = 'flex';
-        saveBar.style.display = 'flex';
+        workflowBar.style.display = 'none';
         updateGalleryImage();
     } else if (tab === 'live') {
         viewer.style.display = 'flex';
         promptContainer.style.display = 'none';
         galleryBar.style.display = 'none';
-        saveBar.style.display = 'none';
+        workflowBar.style.display = 'flex';
         updateLiveImage();
     } else if (tab === 'prompt') {
         viewer.style.display = 'none';
         promptContainer.style.display = 'flex';
         galleryBar.style.display = 'none';
-        saveBar.style.display = 'none';
+        workflowBar.style.display = 'none';
     }
 
     updateProgressUI();
@@ -1170,6 +1173,36 @@ async function copyPrompt() {
     }
 }
 
+/* ---------- Save actions menu ---------- */
+
+function toggleSaveMenu(ev) {
+    if (ev) ev.stopPropagation();
+    if (saveMenu.classList.contains('open')) {
+        closeSaveMenu();
+    } else {
+        openSaveMenu();
+    }
+}
+
+function openSaveMenu() {
+    saveMenu.classList.add('open');
+    if (saveMenuBtn) saveMenuBtn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', onDocumentClickCloseSaveMenu, true);
+}
+
+function closeSaveMenu() {
+    if (!saveMenu) return;
+    saveMenu.classList.remove('open');
+    if (saveMenuBtn) saveMenuBtn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', onDocumentClickCloseSaveMenu, true);
+}
+
+function onDocumentClickCloseSaveMenu(e) {
+    if (saveMenu.contains(e.target)) return;
+    if (saveMenuBtn && saveMenuBtn.contains(e.target)) return;
+    closeSaveMenu();
+}
+
 function killServer() {
     if (confirm("Clear image history and close active session?")) {
         fetch('/inx/kill_server', { method: 'POST' });
@@ -1191,6 +1224,7 @@ async function shutdownPC() {
 
 initZoomGestures();
 updateTabIndicator();
+switchTab('gallery');
 connectWS();
 fetch('/inx/text')
     .then(r => r.json())

@@ -858,15 +858,59 @@ body {
     gap: 8px;
 }
 
+#workflowBar {
+    display: none;
+}
+
 #galleryBar .btn {
     flex: 1 1 0;
 }
 
-#saveBar {
+#galleryBar .menu-btn {
+    flex: 0 0 auto;
+}
+
+.btn.menu-btn {
+    width: 46px;
+    height: 46px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 16px;
+}
+
+.btn.menu-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+#saveMenu {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: calc(100% + 8px);
+    z-index: 30;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    width: 100%;
+    padding: 12px;
+    border-radius: 20px;
+    background: var(--glass-bg-strong);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+    backdrop-filter: blur(26px) saturate(180%);
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+    transform-origin: bottom right;
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+#saveMenu.open {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
 }
 
 .save-row {

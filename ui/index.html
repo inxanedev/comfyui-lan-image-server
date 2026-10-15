@@ -139,8 +139,11 @@
             <button id="prevBtn" class="btn" onclick="navigate(-1)" disabled>Prev</button>
             <span id="counter">0 / 0</span>
             <button id="nextBtn" class="btn" onclick="navigate(1)" disabled>Next</button>
+            <button id="saveMenuBtn" class="btn menu-btn" onclick="toggleSaveMenu(event)" aria-haspopup="true" aria-expanded="false" aria-label="Image actions">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M5 21h14"></path></svg>
+            </button>
         </div>
-        <div id="saveBar">
+        <div id="saveMenu" role="menu">
             <div class="save-row">
                 <button id="downloadBtn" class="btn btn-primary" onclick="downloadCurrentImage()" disabled>Save Image</button>
                 <button id="downloadAllBtn" class="btn" onclick="downloadAll()" disabled>Save All</button>
