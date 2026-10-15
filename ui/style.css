@@ -74,6 +74,117 @@
     color-scheme: light;
 }
 
+/* OLED: true-black backgrounds, white foregrounds, no gradient spheres. */
+[data-theme="oled"] {
+    --bg-0: #000000;
+    --bg-1: #000000;
+    --blob-1: #000000;
+    --blob-2: #000000;
+    --blob-3: #000000;
+    --blob-opacity: 0;
+
+    --text: #ffffff;
+    --text-dim: rgba(255, 255, 255, 0.72);
+    --text-faint: rgba(255, 255, 255, 0.44);
+
+    --accent: #0a84ff;
+    --accent-soft: rgba(10, 132, 255, 0.24);
+    --accent-border: rgba(10, 132, 255, 0.55);
+    --green: #30d158;
+    --red: #ff453a;
+    --red-soft: rgba(255, 69, 58, 0.16);
+    --red-border: rgba(255, 69, 58, 0.4);
+    --orange: #ff9f0a;
+    --purple: #c98bff;
+    --purple-soft: rgba(191, 90, 242, 0.18);
+    --purple-border: rgba(191, 90, 242, 0.4);
+
+    --glass-bg: rgba(255, 255, 255, 0.05);
+    --glass-bg-strong: rgba(16, 16, 16, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-highlight: rgba(255, 255, 255, 0.16);
+    --glass-shadow: 0 10px 34px rgba(0, 0, 0, 0.85);
+    --pill-bg: rgba(255, 255, 255, 0.1);
+    --field-bg: rgba(255, 255, 255, 0.06);
+    --track: rgba(120, 120, 128, 0.3);
+
+    color-scheme: dark;
+}
+
+/* Simple Dark: flat dark gray, muted foregrounds, no gradient spheres. */
+[data-theme="simple"] {
+    --bg-0: #202024;
+    --bg-1: #242428;
+    --blob-1: #2a2a2f;
+    --blob-2: #2a2a2f;
+    --blob-3: #2e2e34;
+    --blob-opacity: 0;
+
+    --text: #e6e6ea;
+    --text-dim: rgba(230, 230, 234, 0.6);
+    --text-faint: rgba(230, 230, 234, 0.38);
+
+    --accent: #8ab4d8;
+    --accent-soft: rgba(138, 180, 216, 0.18);
+    --accent-border: rgba(138, 180, 216, 0.45);
+    --green: #8fce9e;
+    --red: #de8a86;
+    --red-soft: rgba(222, 138, 134, 0.14);
+    --red-border: rgba(222, 138, 134, 0.34);
+    --orange: #d6b47e;
+    --purple: #b39ac9;
+    --purple-soft: rgba(179, 154, 201, 0.15);
+    --purple-border: rgba(179, 154, 201, 0.34);
+
+    --glass-bg: rgba(255, 255, 255, 0.05);
+    --glass-bg-strong: rgba(42, 42, 46, 0.92);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-highlight: rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    --pill-bg: rgba(255, 255, 255, 0.08);
+    --field-bg: rgba(255, 255, 255, 0.06);
+    --track: rgba(120, 120, 128, 0.28);
+
+    color-scheme: dark;
+}
+
+/* Purpur: dark purple backgrounds with lighter purple foregrounds. */
+[data-theme="purpur"] {
+    --bg-0: #11001c;
+    --bg-1: #1c0430;
+    --blob-1: #7a2fbf;
+    --blob-2: #a24fd0;
+    --blob-3: #5b1f8a;
+    --blob-opacity: 0.32;
+
+    --text: #f1e6ff;
+    --text-dim: rgba(241, 230, 255, 0.66);
+    --text-faint: rgba(241, 230, 255, 0.42);
+
+    --accent: #b06cff;
+    --accent-soft: rgba(176, 108, 255, 0.24);
+    --accent-border: rgba(176, 108, 255, 0.55);
+    --green: #6fd3a0;
+    --red: #ff6b8a;
+    --red-soft: rgba(255, 107, 138, 0.16);
+    --red-border: rgba(255, 107, 138, 0.4);
+    --orange: #e0a35c;
+    --purple: #d9b3ff;
+    --purple-soft: rgba(200, 140, 255, 0.2);
+    --purple-border: rgba(200, 140, 255, 0.45);
+
+    --glass-bg: rgba(176, 108, 255, 0.08);
+    --glass-bg-strong: rgba(30, 9, 46, 0.74);
+    --glass-border: rgba(200, 140, 255, 0.2);
+    --glass-highlight: rgba(255, 255, 255, 0.18);
+    --glass-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+    --pill-bg: rgba(176, 108, 255, 0.14);
+    --field-bg: rgba(176, 108, 255, 0.08);
+    --track: rgba(150, 110, 190, 0.32);
+
+    color-scheme: dark;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -250,16 +361,108 @@ body {
 }
 
 .icon-btn .ico {
-    position: absolute;
-    width: 21px;
-    height: 21px;
-    transition: opacity 0.35s ease, transform 0.5s cubic-bezier(0.34, 1.4, 0.5, 1);
+    width: 22px;
+    height: 22px;
 }
 
-[data-theme="dark"] .ico-sun { opacity: 1; transform: rotate(0deg) scale(1); }
-[data-theme="dark"] .ico-moon { opacity: 0; transform: rotate(90deg) scale(0.4); }
-[data-theme="light"] .ico-sun { opacity: 0; transform: rotate(-90deg) scale(0.4); }
-[data-theme="light"] .ico-moon { opacity: 1; transform: rotate(0deg) scale(1); }
+/* ---------- Theme picker ---------- */
+
+#themeMenu {
+    position: absolute;
+    top: calc(100% + 2px);
+    right: 14px;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    min-width: 172px;
+    border-radius: 20px;
+    background: var(--glass-bg-strong);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    opacity: 0;
+    transform: translateY(-12px) scale(0.9);
+    transform-origin: top right;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.32s cubic-bezier(0.34, 1.5, 0.5, 1);
+}
+
+#themeMenu.open {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+}
+
+.theme-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    padding: 10px 12px;
+    border: none;
+    border-radius: 14px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.18s ease;
+}
+
+.theme-item:active {
+    background: var(--pill-bg);
+}
+
+.theme-item.active {
+    background: var(--pill-bg);
+}
+
+.theme-item.active::after {
+    content: "";
+    margin-left: auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+}
+
+.theme-swatch {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--glass-border);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.theme-item[data-theme-value="dark"] .theme-swatch {
+    background: linear-gradient(160deg, #2b3040, #05060a);
+}
+
+.theme-item[data-theme-value="light"] .theme-swatch {
+    background: linear-gradient(160deg, #ffffff, #c9d3e6);
+}
+
+.theme-item[data-theme-value="oled"] .theme-swatch {
+    background: #000000;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.theme-item[data-theme-value="simple"] .theme-swatch {
+    background: linear-gradient(160deg, #3a3a40, #202024);
+}
+
+.theme-item[data-theme-value="purpur"] .theme-swatch {
+    background: linear-gradient(160deg, #b06cff, #11001c);
+}
 
 /* ---------- Viewer ---------- */
 

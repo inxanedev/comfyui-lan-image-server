@@ -10,6 +10,8 @@ const tabLive = document.getElementById('tabLive');
 const tabPrompt = document.getElementById('tabPrompt');
 const tabsEl = document.getElementById('tabs');
 const tabIndicatorEl = document.getElementById('tabIndicator');
+const themeToggleBtn = document.getElementById('themeToggle');
+const themeMenu = document.getElementById('themeMenu');
 const controls = document.getElementById('controls');
 
 const promptContainer = document.getElementById('promptContainer');
@@ -630,17 +632,80 @@ function onLayoutChange() {
     }
 }
 
-function toggleTheme() {
-    const root = document.documentElement;
-    const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-    root.setAttribute('data-theme', next);
+const THEME_COLORS = {
+    dark: '#05060a',
+    light: '#e9edf6',
+    oled: '#000000',
+    simple: '#202024',
+    purpur: '#11001c'
+};
+
+let themeMenuOpen = false;
+
+function applyTheme(name) {
+    if (!THEME_COLORS[name]) name = 'dark';
+    document.documentElement.setAttribute('data-theme', name);
     const themeMeta = document.querySelector('meta[name="theme-color"]');
-    if (themeMeta) {
-        themeMeta.setAttribute('content', next === 'light' ? '#e9edf6' : '#05060a');
-    }
+    if (themeMeta) themeMeta.setAttribute('content', THEME_COLORS[name]);
     try {
-        localStorage.setItem('inx-theme', next);
+        localStorage.setItem('inx-theme', name);
     } catch (e) {}
+    updateThemeMenuActive();
+}
+
+function updateThemeMenuActive() {
+    if (!themeMenu) return;
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    themeMenu.querySelectorAll('.theme-item').forEach(function (item) {
+        const active = item.dataset.themeValue === current;
+        item.classList.toggle('active', active);
+        item.setAttribute('aria-checked', active ? 'true' : 'false');
+    });
+}
+
+function toggleThemeMenu(ev) {
+    if (ev) ev.stopPropagation();
+    if (themeMenuOpen) {
+        closeThemeMenu();
+    } else {
+        openThemeMenu();
+    }
+}
+
+function openThemeMenu() {
+    if (!themeMenu || themeMenuOpen) return;
+    themeMenuOpen = true;
+    themeMenu.classList.add('open');
+    themeMenu.setAttribute('aria-hidden', 'false');
+    if (themeToggleBtn) themeToggleBtn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', onDocumentClickCloseThemeMenu, true);
+}
+
+function closeThemeMenu() {
+    if (!themeMenu) return;
+    themeMenuOpen = false;
+    themeMenu.classList.remove('open');
+    themeMenu.setAttribute('aria-hidden', 'true');
+    if (themeToggleBtn) themeToggleBtn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', onDocumentClickCloseThemeMenu, true);
+}
+
+function onDocumentClickCloseThemeMenu(e) {
+    if (themeMenu.contains(e.target)) return;
+    if (themeToggleBtn && themeToggleBtn.contains(e.target)) return;
+    closeThemeMenu();
+}
+
+function initThemeMenu() {
+    if (!themeMenu) return;
+    themeMenu.querySelectorAll('.theme-item').forEach(function (item) {
+        item.addEventListener('click', function (e) {
+            e.stopPropagation();
+            applyTheme(item.dataset.themeValue);
+            closeThemeMenu();
+        });
+    });
+    updateThemeMenuActive();
 }
 
 function switchTab(tab) {
@@ -2706,6 +2771,7 @@ initPreviewGestures();
 initTabsDrag();
 initAccordionDrag();
 initQuickMenu();
+initThemeMenu();
 initSimpleMode();
 updateTabIndicator();
 switchTab(simpleMode ? 'live' : 'gallery');

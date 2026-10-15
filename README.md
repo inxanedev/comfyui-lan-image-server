@@ -46,7 +46,7 @@ Watch generations happen live, start and stop runs, and edit your generation set
 
 **Nice to have**
 - **Simple Mode** — one switch hides everything except the live preview and the newest image, turning the panel into a clean, always-on *second display* for ComfyUI (this is basically the original purpose of the project, now provided as a toggle).
-- Clean iOS-style interface with **light & dark mode**.
+- Clean iOS-style interface with **five themes** — **Dark**, **Light**, **Dark OLED** (true-black for OLED screens), **Simple Dark** (flat, muted, no background glow) and **Purpur** (dark purple). Tap the palette button to pick one; your choice is remembered.
 - Smooth and snappy, with **image caching and preloading** so navigation is instant.
 - Remote **Clear** and **Shutdown PC** controls.
 - The gallery **persists across restarts**, so your images are still there when you come back.
