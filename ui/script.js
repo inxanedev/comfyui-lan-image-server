@@ -1155,6 +1155,8 @@ function updateLiveImage() {
         placeholder.style.display = 'none';
         img.style.display = 'block';
         img.src = livePreviewUrl;
+        // Keep the full-width double-tap preview streaming along with the live view.
+        if (previewOpen) previewImage.src = livePreviewUrl;
     }
 }
 
