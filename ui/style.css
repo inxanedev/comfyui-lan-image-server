@@ -1214,3 +1214,64 @@ body {
         transition-duration: 0.001ms !important;
     }
 }
+
+/* ---------- Desktop / large screens: dock Settings on the right ---------- */
+
+.pane-title {
+    display: none;
+}
+
+@media (min-width: 900px) {
+    body {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        grid-template-areas:
+            "topbar settings"
+            "viewer settings"
+            "controls settings";
+        max-width: 1500px;
+        margin: 0 auto;
+    }
+
+    #topbar {
+        grid-area: topbar;
+    }
+
+    #viewer {
+        grid-area: viewer;
+    }
+
+    #controls {
+        grid-area: controls;
+    }
+
+    #promptContainer {
+        grid-area: settings;
+        display: flex !important;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 16px 16px 0;
+        border-left: 1px solid var(--glass-border);
+    }
+
+    /* Settings is always visible here, so its tab is redundant. */
+    #tabPrompt {
+        display: none;
+    }
+
+    .pane-title {
+        display: block;
+        padding: 2px 4px 4px;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+        color: var(--text);
+    }
+
+    /* Let accordions expand fully inside the scrollable docked panel. */
+    .acc-item.open .acc-body {
+        max-height: none;
+        overflow: visible;
+    }
+}

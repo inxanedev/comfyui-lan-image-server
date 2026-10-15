@@ -269,12 +269,25 @@ function initZoomGestures() {
     });
 }
 
+const DESKTOP_MQ = window.matchMedia('(min-width: 900px)');
+
 function updateTabIndicator() {
     const order = ['gallery', 'live', 'prompt'];
-    const index = Math.max(0, order.indexOf(currentTab));
+    const count = DESKTOP_MQ.matches ? 2 : 3;
+    let index = Math.max(0, order.indexOf(currentTab));
+    if (index > count - 1) index = count - 1;
     const indicator = document.getElementById('tabIndicator');
     if (indicator) {
+        indicator.style.width = `calc((100% - 8px) / ${count})`;
         indicator.style.transform = `translateX(${index * 100}%)`;
+    }
+}
+
+function onLayoutChange() {
+    if (DESKTOP_MQ.matches && currentTab === 'prompt') {
+        switchTab('gallery');
+    } else {
+        updateTabIndicator();
     }
 }
 
@@ -1468,6 +1481,12 @@ async function shutdownPC() {
 if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', positionModal);
     window.visualViewport.addEventListener('scroll', positionModal);
+}
+
+if (DESKTOP_MQ.addEventListener) {
+    DESKTOP_MQ.addEventListener('change', onLayoutChange);
+} else if (DESKTOP_MQ.addListener) {
+    DESKTOP_MQ.addListener(onLayoutChange);
 }
 
 initZoomGestures();
