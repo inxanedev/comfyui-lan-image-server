@@ -71,11 +71,18 @@ ASPECT_RATIOS = {
     "16:9": (16, 9),
     "21:9": (21, 9),
 }
-RES_ASPECT = "1:1"
-RES_MEGAPIXELS = 1.5
-RES_CUSTOM = False
-RES_CUSTOM_WIDTH = 1224
-RES_CUSTOM_HEIGHT = 1224
+# Resolution defaults (used to tell overridden sizes apart from the defaults)
+DEFAULT_RES_ASPECT = "1:1"
+DEFAULT_RES_MEGAPIXELS = 1.5
+DEFAULT_RES_CUSTOM = False
+DEFAULT_RES_CUSTOM_WIDTH = 1224
+DEFAULT_RES_CUSTOM_HEIGHT = 1224
+
+RES_ASPECT = DEFAULT_RES_ASPECT
+RES_MEGAPIXELS = DEFAULT_RES_MEGAPIXELS
+RES_CUSTOM = DEFAULT_RES_CUSTOM
+RES_CUSTOM_WIDTH = DEFAULT_RES_CUSTOM_WIDTH
+RES_CUSTOM_HEIGHT = DEFAULT_RES_CUSTOM_HEIGHT
 
 # Presets
 PRESETS_DIR = os.path.join(NODE_DIR, "presets")
@@ -347,6 +354,15 @@ def resolution_state():
     }
 
 
+def resolution_overridden():
+    """True when the size differs from the panel defaults (so it counts as an override)."""
+    return (
+        RES_CUSTOM != DEFAULT_RES_CUSTOM
+        or RES_ASPECT != DEFAULT_RES_ASPECT
+        or abs(RES_MEGAPIXELS - DEFAULT_RES_MEGAPIXELS) > 1e-9
+    )
+
+
 def get_effective_settings():
     width, height = get_effective_resolution()
 
@@ -369,6 +385,7 @@ def settings_state():
     return {
         "defaults": GENERATION_DEFAULTS,
         "overrides": GENERATION_OVERRIDES,
+        "resolution_overridden": resolution_overridden(),
         "effective": get_effective_settings(),
         "resolution": resolution_state(),
         "samplers": SAMPLERS,
@@ -382,11 +399,11 @@ def _reset_settings():
 
     GENERATION_OVERRIDES.clear()
     SEED_OVERRIDES.clear()
-    RES_ASPECT = "1:1"
-    RES_MEGAPIXELS = 1.5
-    RES_CUSTOM = False
-    RES_CUSTOM_WIDTH = 1224
-    RES_CUSTOM_HEIGHT = 1224
+    RES_ASPECT = DEFAULT_RES_ASPECT
+    RES_MEGAPIXELS = DEFAULT_RES_MEGAPIXELS
+    RES_CUSTOM = DEFAULT_RES_CUSTOM
+    RES_CUSTOM_WIDTH = DEFAULT_RES_CUSTOM_WIDTH
+    RES_CUSTOM_HEIGHT = DEFAULT_RES_CUSTOM_HEIGHT
     SETTINGS_REVISION += 1
     CURRENT_PRESET = None
 
@@ -1230,11 +1247,11 @@ async def handle_post_settings(request):
     if "resolution" in data:
         res = data["resolution"]
         if res is None:
-            RES_ASPECT = "1:1"
-            RES_MEGAPIXELS = 1.5
-            RES_CUSTOM = False
-            RES_CUSTOM_WIDTH = 1224
-            RES_CUSTOM_HEIGHT = 1224
+            RES_ASPECT = DEFAULT_RES_ASPECT
+            RES_MEGAPIXELS = DEFAULT_RES_MEGAPIXELS
+            RES_CUSTOM = DEFAULT_RES_CUSTOM
+            RES_CUSTOM_WIDTH = DEFAULT_RES_CUSTOM_WIDTH
+            RES_CUSTOM_HEIGHT = DEFAULT_RES_CUSTOM_HEIGHT
         elif isinstance(res, dict):
             if res.get("aspect") in ASPECT_RATIOS:
                 RES_ASPECT = res["aspect"]

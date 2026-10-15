@@ -632,7 +632,9 @@ function updateGenerationUI() {
     if (preview) preview.textContent = width + 'x' + height + ' px';
 
     if (badge) {
-        const overridden = settingsData && settingsData.overrides && Object.keys(settingsData.overrides).length > 0;
+        const genOverridden = settingsData && settingsData.overrides && Object.keys(settingsData.overrides).length > 0;
+        const resOverridden = !!(settingsData && settingsData.resolution_overridden);
+        const overridden = genOverridden || resOverridden;
         badge.textContent = overridden ? 'Overridden' : 'Default';
         badge.classList.toggle('badge-custom', !!overridden);
     }
