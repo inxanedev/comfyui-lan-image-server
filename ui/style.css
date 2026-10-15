@@ -462,6 +462,7 @@ body {
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     transform-origin: center center;
     will-change: transform;
+    touch-action: none;
     -webkit-user-drag: none;
     user-select: none;
 }
