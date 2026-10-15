@@ -1324,6 +1324,20 @@ function onDocumentClickCloseSaveMenu(e) {
 
 let modalResolve = null;
 
+function positionModal() {
+    const el = document.getElementById('modal');
+    if (!el || !el.classList.contains('open')) return;
+    const vv = window.visualViewport;
+    if (vv && vv.height) {
+        // Keep the dialog inside the visible area so the on-screen keyboard can't cover it.
+        el.style.top = vv.offsetTop + 'px';
+        el.style.height = vv.height + 'px';
+    } else {
+        el.style.top = '';
+        el.style.height = '';
+    }
+}
+
 function modal(options) {
     const opts = options || {};
     const el = document.getElementById('modal');
@@ -1356,6 +1370,7 @@ function modal(options) {
     el.classList.add('open');
     el.setAttribute('aria-hidden', 'false');
     document.addEventListener('keydown', onModalKeydown, true);
+    positionModal();
 
     if (isInput) {
         setTimeout(() => {
@@ -1371,6 +1386,8 @@ function resolveModal(value) {
     if (el) {
         el.classList.remove('open');
         el.setAttribute('aria-hidden', 'true');
+        el.style.top = '';
+        el.style.height = '';
     }
     document.removeEventListener('keydown', onModalKeydown, true);
     const resolve = modalResolve;
@@ -1446,6 +1463,11 @@ async function shutdownPC() {
     try {
         await fetch('/inx/shutdown', { method: 'POST' });
     } catch (e) {}
+}
+
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', positionModal);
+    window.visualViewport.addEventListener('scroll', positionModal);
 }
 
 initZoomGestures();
