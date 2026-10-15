@@ -102,6 +102,7 @@ let zoomTx = 0;
 let zoomTy = 0;
 let gesture = null;
 let galleryAnim = null;
+let swipeDrag = null;
 let wheelAccum = 0;
 let wheelLockUntil = 0;
 
@@ -200,6 +201,11 @@ function prefetchImage(index) {
     loadImageUrl(index).catch(() => {});
 }
 
+function getCachedImageUrl(index) {
+    const url = imageCache.get(`${imageEpoch}:${index}`);
+    return (typeof url === 'string' && url.startsWith('blob:')) ? url : null;
+}
+
 function queuePreviewFrame(buffer, mimeType) {
     pendingPreview = { buffer: buffer, mime: mimeType };
     if (!previewRafScheduled) {
@@ -229,6 +235,7 @@ function initZoomGestures() {
         if (img.style.display === 'none') return;
 
         if (e.touches.length === 2) {
+            if (swipeDrag) cancelSwipeGraphic();
             const dx = e.touches[0].clientX - e.touches[1].clientX;
             const dy = e.touches[0].clientY - e.touches[1].clientY;
             gesture = {
@@ -248,7 +255,10 @@ function initZoomGestures() {
                 startTx: zoomTx,
                 startTy: zoomTy,
                 swipeEligible: (currentTab === 'gallery' && zoomScale <= 1),
-                startOnBadges: !!(e.target && e.target.closest && e.target.closest('#badges'))
+                startOnBadges: !!(e.target && e.target.closest && e.target.closest('#badges')),
+                startTime: Date.now(),
+                swiping: false,
+                swipeDecided: false
             };
         }
     }, { passive: false });
@@ -286,11 +296,36 @@ function initZoomGestures() {
 
             applyZoom();
         } else if (e.touches.length === 1 && gesture.mode === 'pan') {
-            if (zoomScale <= 1) return;
-            e.preventDefault();
-            zoomTx = gesture.startTx + (e.touches[0].clientX - gesture.startX);
-            zoomTy = gesture.startTy + (e.touches[0].clientY - gesture.startY);
-            applyZoom();
+            if (zoomScale > 1) {
+                e.preventDefault();
+                zoomTx = gesture.startTx + (e.touches[0].clientX - gesture.startX);
+                zoomTy = gesture.startTy + (e.touches[0].clientY - gesture.startY);
+                applyZoom();
+                return;
+            }
+
+            // Continuous gallery swipe: let the neighbour image follow the finger.
+            if (gesture.swipeEligible && totalImages > 0) {
+                const cx = e.touches[0].clientX;
+                const cy = e.touches[0].clientY;
+                const dx = cx - gesture.startX;
+                const dy = cy - gesture.startY;
+
+                if (!gesture.swipeDecided) {
+                    if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+                        gesture.swipeDecided = true;
+                        gesture.swiping = true;
+                        beginSwipeDrag();
+                    } else if (Math.abs(dy) > 10) {
+                        gesture.swipeDecided = true;
+                    }
+                }
+
+                if (gesture.swiping) {
+                    e.preventDefault();
+                    applySwipe(dx);
+                }
+            }
         }
     }, { passive: false });
 
@@ -311,24 +346,19 @@ function initZoomGestures() {
 
         if (e.touches.length === 0) {
             gesture = null;
-            resetZoom();
-
             const changed = e.changedTouches && e.changedTouches[0];
-            let didSwipe = false;
 
-            // Swipe left/right in the Gallery to move between images (only when not zoomed).
-            if (finished && finished.swipeEligible && finished.mode === 'pan'
-                && currentTab === 'gallery' && changed) {
-                const dx = changed.clientX - finished.startX;
-                const dy = changed.clientY - finished.startY;
-                if (Math.abs(dx) >= 45 && Math.abs(dx) > Math.abs(dy) * 1.4) {
-                    navigate(dx < 0 ? 1 : -1);
-                    didSwipe = true;
-                }
+            // Finish a continuous gallery swipe.
+            if (finished && finished.swiping && swipeDrag && changed) {
+                const dt = Date.now() - finished.startTime;
+                endSwipe(changed.clientX - finished.startX, dt);
+                return;
             }
 
+            resetZoom();
+
             // A quick double tap opens the image preview (Gallery / Live only).
-            if (!didSwipe && finished && finished.mode === 'pan' && !finished.startOnBadges
+            if (finished && finished.mode === 'pan' && !finished.startOnBadges
                 && changed && (currentTab === 'gallery' || currentTab === 'live')) {
                 const dx = changed.clientX - finished.startX;
                 const dy = changed.clientY - finished.startY;
@@ -342,6 +372,7 @@ function initZoomGestures() {
     }, { passive: false });
 
     viewer.addEventListener('touchcancel', () => {
+        if (gesture && gesture.swiping) cancelSwipeGraphic();
         gesture = null;
         resetZoom();
     });
@@ -1365,6 +1396,147 @@ function animateGallerySlide(direction, previousSrc, previousRect) {
         [{ transform: `translateX(${direction * width}px)` }, { transform: 'translateX(0)' }],
         { duration: duration, easing: easing }
     );
+}
+
+/* ---------- Continuous gallery swipe ---------- */
+
+function beginSwipeDrag() {
+    if (swipeDrag) return;
+    if (currentTab !== 'gallery' || totalImages === 0) return;
+    const vRect = viewer.getBoundingClientRect();
+    const iRect = img.getBoundingClientRect();
+    if (!iRect.width || !vRect.width) return;
+
+    swipeDrag = {
+        rect: { left: iRect.left, top: iRect.top, width: iRect.width, height: iRect.height },
+        viewerRect: { left: vRect.left, top: vRect.top, width: vRect.width, height: vRect.height },
+        ghost: null,
+        dir: 0,
+        baseOffset: 0
+    };
+    img.style.transition = 'none';
+}
+
+function removeSwipeGhost() {
+    if (swipeDrag && swipeDrag.ghost) {
+        swipeDrag.ghost.remove();
+        swipeDrag.ghost = null;
+        swipeDrag.dir = 0;
+    }
+}
+
+function ensureSwipeGhost(dir) {
+    if (!swipeDrag) return;
+    if (swipeDrag.dir === dir && swipeDrag.ghost) return;
+    removeSwipeGhost();
+
+    const target = (currentIndex - 1) + dir;
+    if (target < 0 || target >= totalImages) return;
+
+    const rect = swipeDrag.rect;
+    const vRect = swipeDrag.viewerRect;
+    const ghost = document.createElement('img');
+    ghost.className = 'swipe-ghost';
+    ghost.draggable = false;
+    ghost.style.left = (rect.left - vRect.left) + 'px';
+    ghost.style.top = (rect.top - vRect.top) + 'px';
+    ghost.style.width = rect.width + 'px';
+    ghost.style.height = rect.height + 'px';
+    swipeDrag.baseOffset = dir === 1 ? vRect.width : -vRect.width;
+    ghost.style.transform = `translateX(${swipeDrag.baseOffset}px)`;
+
+    const cached = getCachedImageUrl(target);
+    if (cached) {
+        ghost.src = cached;
+    } else {
+        loadImageUrl(target).then(function (url) {
+            if (swipeDrag && swipeDrag.ghost === ghost) ghost.src = url;
+        }).catch(function () {});
+    }
+
+    viewer.appendChild(ghost);
+    swipeDrag.dir = dir;
+    swipeDrag.ghost = ghost;
+}
+
+function applySwipe(dx) {
+    if (!swipeDrag) return;
+    const index = currentIndex - 1;
+    const dir = dx < 0 ? 1 : -1; // dragging left reveals the next image
+    const hasNeighbor = (index + dir) >= 0 && (index + dir) < totalImages;
+
+    let eff = dx;
+    if (hasNeighbor) {
+        ensureSwipeGhost(dir);
+    } else {
+        removeSwipeGhost();
+        eff = dx * 0.35; // rubber-band at the ends
+    }
+
+    img.style.transform = `translateX(${eff}px)`;
+    if (swipeDrag && swipeDrag.ghost) {
+        swipeDrag.ghost.style.transform = `translateX(${swipeDrag.baseOffset + eff}px)`;
+    }
+}
+
+function animateSwipeTo(imgTx, ghostTx, onDone) {
+    const duration = 200;
+    const easing = 'cubic-bezier(0.22, 1, 0.36, 1)';
+    img.style.transition = `transform ${duration}ms ${easing}`;
+    img.style.transform = `translateX(${imgTx}px)`;
+    if (swipeDrag && swipeDrag.ghost) {
+        swipeDrag.ghost.style.transition = `transform ${duration}ms ${easing}`;
+        swipeDrag.ghost.style.transform = `translateX(${ghostTx}px)`;
+    }
+    setTimeout(onDone, duration + 30);
+}
+
+function cancelSwipeGraphic() {
+    if (!swipeDrag) return;
+    removeSwipeGhost();
+    swipeDrag = null;
+    img.style.transition = 'none';
+    img.style.transform = '';
+    requestAnimationFrame(function () { img.style.transition = ''; });
+}
+
+function commitSwipeGraphic(targetDir) {
+    if (!swipeDrag) return;
+    const ghost = swipeDrag.ghost;
+    const ghostUrl = ghost ? ghost.getAttribute('src') : null;
+    if (ghost) ghost.remove();
+    swipeDrag = null;
+
+    currentIndex += targetDir;
+    if (ghostUrl) img.src = ghostUrl;
+    displayedImageKey = null;
+    updateGalleryImage();
+    img.style.transition = 'none';
+    img.style.transform = '';
+    requestAnimationFrame(function () { img.style.transition = ''; });
+}
+
+function endSwipe(dx, dt) {
+    if (!swipeDrag) return;
+    const w = swipeDrag.viewerRect.width;
+    const index = currentIndex - 1;
+    const velocity = dx / Math.max(1, dt);
+    const distThreshold = w * 0.3;
+    const velThreshold = 0.4; // px per ms
+
+    let targetDir = 0;
+    if (dx < 0 && (index + 1) < totalImages && (Math.abs(dx) > distThreshold || velocity < -velThreshold)) {
+        targetDir = 1;
+    } else if (dx > 0 && (index - 1) >= 0 && (dx > distThreshold || velocity > velThreshold)) {
+        targetDir = -1;
+    }
+
+    if (targetDir === 0 || !swipeDrag.ghost) {
+        // Snap back into place.
+        animateSwipeTo(0, swipeDrag.baseOffset, cancelSwipeGraphic);
+    } else {
+        animateSwipeTo(-targetDir * w, 0, function () { commitSwipeGraphic(targetDir); });
+    }
 }
 
 async function updateGalleryImage(slideDirection) {
