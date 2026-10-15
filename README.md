@@ -33,6 +33,7 @@ Watch generations happen live, start and stop runs, and edit your generation set
 - **Upscale (2x)** — send the selected image through a **SeedVR2** workflow and insert the result right after it (requires the SeedVR2 extension — see [Upscaling](#upscaling-seedvr2)).
 
 **Nice to have**
+- **Simple Mode** — one switch hides everything except the live preview and the newest image, turning the panel into a clean, always-on *second display* for ComfyUI (this is basically the original purpose of the project, now provided as a toggle).
 - Clean iOS-style interface with **light & dark mode**.
 - Smooth and snappy, with **image caching and preloading** so navigation is instant.
 - Remote **Clear** and **Shutdown PC** controls.
@@ -129,7 +130,9 @@ The **↓ button** on the right opens the gallery actions: **Save Image**, **Sav
 The real-time sampler preview, with the current **step counter** (e.g. `12 / 20`) in the corner. When a generation finishes it becomes the full-quality image, and the action bar here has **Run**, **Run (Instant)** / **Stop Loop**, and **Cancel**.
 
 ### Settings
-An expandable list of sections — only one opens at a time. What you see depends on which `inx` nodes are in your workflow:
+At the top is the **Simple Mode** switch. Turning it on hides the **Gallery** tab, the **Run / Run (Instant) / Cancel** bar, and every other Settings section — leaving only the **Live** preview (and the newest full-res image). The panel then works as a clean second display; everything (history, settings, generation) keeps running in the background, so you can flip it back off at any time.
+
+Below that, an expandable list of sections — only one opens at a time. What you see depends on which `inx` nodes are in your workflow:
 
 - **Presets** — save the current **Generation** settings and seed under a name. Pick a preset from the dropdown to load it, choose **None** to unload (back to defaults), and use **Save** / **Delete**. Saving while a preset is loaded asks whether to overwrite it or save a new one.
 - **Generation** — appears with `Fetch Generation Settings (LAN)`. Edit the **prompt** and **negative**, the **size** (aspect ratio + megapixels, or tick **Custom** for exact pixels — with a live size preview such as `1000x1000 px`), plus **Steps**, **CFG**, **Sampler** and **Scheduler**. A **Reset to defaults** button clears everything. Changes save automatically and apply to the next run.
