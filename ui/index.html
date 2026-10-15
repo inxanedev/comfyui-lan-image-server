@@ -45,8 +45,10 @@
     <main id="viewer">
         <div id="status">Connecting...</div>
         <div id="progressPill">0 / 0</div>
-        <div id="upscaleBadge" role="button" tabindex="0" title="Compare original vs upscaled" onclick="openComparison()">Upscaled</div>
-        <div id="resBadge" title="Image resolution"></div>
+        <div id="badges">
+            <div id="resBadge" title="Image resolution"></div>
+            <div id="upscaleBadge" role="button" tabindex="0" title="Compare original vs upscaled" onclick="openComparison()">Upscaled</div>
+        </div>
         <img id="display" src="" alt="Served Image" style="display:none;">
         <div id="placeholder">No images available</div>
     </main>
