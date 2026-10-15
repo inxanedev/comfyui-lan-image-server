@@ -821,21 +821,18 @@ function updateSeedUI(data) {
         row1.appendChild(setBtn);
 
         const row2 = document.createElement('div');
-        row2.className = 'seed-row';
+        row2.className = 'seed-row seed-actions';
         const randomBtn = document.createElement('button');
         randomBtn.className = 'btn seed-btn' + (node.mode === 'random' ? ' active-random' : '');
         randomBtn.textContent = 'Random each run';
-        randomBtn.style.flex = '1';
         randomBtn.onclick = () => setSeed(node.id, 'random', null);
         const newRandomBtn = document.createElement('button');
         newRandomBtn.className = 'btn seed-btn';
         newRandomBtn.textContent = 'New random';
-        newRandomBtn.style.flex = '1';
         newRandomBtn.onclick = () => setSeed(node.id, 'new_random', null);
         const resetBtn = document.createElement('button');
         resetBtn.className = 'btn seed-btn';
         resetBtn.textContent = 'Reset';
-        resetBtn.style.flex = '0.8';
         resetBtn.onclick = () => setSeed(node.id, 'default', null);
         row2.appendChild(randomBtn);
         row2.appendChild(newRandomBtn);

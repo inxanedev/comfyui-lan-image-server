@@ -535,6 +535,7 @@ body {
     gap: 10px;
     max-height: 60vh;
     overflow-y: auto;
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
 }
 
@@ -571,7 +572,12 @@ body {
 .seed-row {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
+}
+
+.seed-actions .btn {
+    flex: 1 1 40% !important;
 }
 
 .seed-input {
