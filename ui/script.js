@@ -29,6 +29,10 @@ const copyPromptBtn = document.getElementById('copyPromptBtn');
 const stripMetadata = document.getElementById('stripMetadata');
 const workflowBar = document.getElementById('workflowBar');
 const progressPill = document.getElementById('progressPill');
+const presetSelect = document.getElementById('presetSelect');
+const presetDeleteBtn = document.getElementById('presetDeleteBtn');
+const presetNotice = document.getElementById('presetNotice');
+const presetBadge = document.getElementById('presetBadge');
 
 let currentTab = 'gallery';
 let totalImages = 0;
@@ -39,6 +43,8 @@ let loopActive = false;
 let settingsData = { defaults: {}, overrides: {}, effective: {}, resolution: {}, samplers: [], schedulers: [] };
 let settingsDirty = false;
 let settingsTimer = null;
+let presets = [];
+let currentPreset = null;
 
 let seedNodes = [];
 let progressValue = null;
@@ -620,6 +626,117 @@ async function revertSettings() {
     } catch (e) {}
 }
 
+/* ---------- Presets ---------- */
+
+function applyPresets(data) {
+    if (!data) return;
+    if (Array.isArray(data.presets)) presets = data.presets;
+    if (data.current !== undefined) currentPreset = data.current || null;
+
+    if (presetSelect) {
+        presetSelect.innerHTML = '';
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = 'None';
+        presetSelect.appendChild(none);
+        for (const name of presets) {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            presetSelect.appendChild(option);
+        }
+        presetSelect.value = currentPreset || '';
+    }
+
+    if (presetDeleteBtn) presetDeleteBtn.disabled = !currentPreset;
+    if (presetBadge) {
+        presetBadge.textContent = currentPreset || 'None';
+        presetBadge.classList.toggle('badge-custom', !!currentPreset);
+    }
+}
+
+function showPresetNotice(text) {
+    if (!presetNotice) return;
+    presetNotice.textContent = text;
+    presetNotice.style.color = '#4CAF50';
+    setTimeout(() => {
+        if (presetNotice.textContent === text) presetNotice.textContent = '';
+    }, 2500);
+}
+
+async function loadPresets() {
+    try {
+        const resp = await fetch('/inx/presets');
+        if (!resp.ok) return;
+        applyPresets(await resp.json());
+    } catch (e) {}
+}
+
+async function postPreset(action, name) {
+    try {
+        const resp = await fetch('/inx/presets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: action, name: name || '' })
+        });
+        const data = await resp.json();
+        if (data && data.message) alert(data.message);
+        if (data && data.presets) {
+            applyPresets(data);
+            if (data.settings) applySettingsState(data.settings);
+            if (data.seeds) updateSeedUI({ seeds: data.seeds });
+        }
+        return data;
+    } catch (e) {
+        alert('Preset action failed.');
+        return null;
+    }
+}
+
+async function onPresetSelect() {
+    const value = presetSelect ? presetSelect.value : '';
+    if (value === (currentPreset || '')) return;
+    if (!value) {
+        await postPreset('unload');
+        showPresetNotice('Unloaded');
+    } else {
+        await postPreset('load', value);
+        showPresetNotice('Loaded "' + value + '"');
+    }
+}
+
+async function savePresetFlow() {
+    if (currentPreset) {
+        const overwrite = confirm('Preset "' + currentPreset + '" is loaded.\n\nOK: overwrite it\nCancel: save as a new preset');
+        if (overwrite) {
+            const data = await postPreset('save', currentPreset);
+            if (data) showPresetNotice('Saved "' + currentPreset + '"');
+            return;
+        }
+        const input = prompt('Name for the new preset:', currentPreset);
+        if (input === null) return;
+        const name = input.trim();
+        if (!name) return;
+        const data = await postPreset('save', name);
+        if (data && data.current) showPresetNotice('Saved "' + data.current + '"');
+    } else {
+        const input = prompt('Name for the new preset:');
+        if (input === null) return;
+        const name = input.trim();
+        if (!name) return;
+        const data = await postPreset('save', name);
+        if (data && data.current) showPresetNotice('Saved "' + data.current + '"');
+    }
+}
+
+async function deletePreset() {
+    if (!currentPreset) return;
+    if (!confirm('Delete preset "' + currentPreset + '"?')) return;
+    const name = currentPreset;
+    await postPreset('delete', name);
+    showPresetNotice('Deleted "' + name + '"');
+}
+
 async function refreshSeeds() {
     try {
         const resp = await fetch('/inx/seed');
@@ -970,10 +1087,18 @@ function connectWS() {
                     if (data.settings) {
                         applySettingsState(data.settings);
                     }
+
+                    if (data.type === 'init' && (data.presets !== undefined || data.current_preset !== undefined)) {
+                        applyPresets({ presets: data.presets || [], current: data.current_preset });
+                    }
                 } else if (data.type === 'seed_update') {
                     updateSeedUI(data);
                 } else if (data.type === 'settings_update') {
                     applySettingsState(data.settings);
+                } else if (data.type === 'presets_update') {
+                    applyPresets(data);
+                    if (data.settings) applySettingsState(data.settings);
+                    if (data.seeds) updateSeedUI({ seeds: data.seeds });
                 } else if (data.type === 'progress') {
                     if (data.value == null) {
                         setProgress(null);
@@ -1216,3 +1341,4 @@ switchTab('gallery');
 connectWS();
 refreshSeeds();
 loadSettings();
+loadPresets();

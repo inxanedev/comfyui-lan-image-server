@@ -5,6 +5,7 @@ import json
 import math
 import os
 import random
+import re
 import shutil
 import socket
 import subprocess
@@ -71,6 +72,10 @@ RES_MEGAPIXELS = 1.5
 RES_CUSTOM = False
 RES_CUSTOM_WIDTH = 1224
 RES_CUSTOM_HEIGHT = 1224
+
+# Presets
+PRESETS_DIR = os.path.join(NODE_DIR, "presets")
+CURRENT_PRESET = None
 
 def ensure_clean_temp_dir():
     """Clears the temp directory when the server starts for the first time."""
@@ -344,6 +349,144 @@ def settings_state():
     }
 
 
+def _reset_settings():
+    global RES_ASPECT, RES_MEGAPIXELS, RES_CUSTOM, RES_CUSTOM_WIDTH, RES_CUSTOM_HEIGHT
+    global SETTINGS_REVISION, CURRENT_PRESET
+
+    GENERATION_OVERRIDES.clear()
+    SEED_OVERRIDES.clear()
+    RES_ASPECT = "1:1"
+    RES_MEGAPIXELS = 1.5
+    RES_CUSTOM = False
+    RES_CUSTOM_WIDTH = 1224
+    RES_CUSTOM_HEIGHT = 1224
+    SETTINGS_REVISION += 1
+    CURRENT_PRESET = None
+
+
+def _sanitize_preset_name(name):
+    if not isinstance(name, str):
+        return ""
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", name).strip().strip(".")
+    return cleaned[:64]
+
+
+def ensure_presets_dir():
+    os.makedirs(PRESETS_DIR, exist_ok=True)
+
+
+def _preset_path(name):
+    safe = _sanitize_preset_name(name)
+    if not safe:
+        return None, None
+    return os.path.join(PRESETS_DIR, safe + ".json"), safe
+
+
+def list_presets():
+    try:
+        ensure_presets_dir()
+        names = [f[:-5] for f in os.listdir(PRESETS_DIR) if f.endswith(".json")]
+    except OSError:
+        names = []
+    names.sort(key=str.lower)
+    return names
+
+
+def _write_preset(name):
+    path, safe = _preset_path(name)
+    if not path:
+        return None
+
+    ensure_presets_dir()
+    effective = get_effective_settings()
+    resolution = resolution_state()
+    payload = {
+        "name": safe,
+        "generation": {k: effective[k] for k in ("text", "negative", "steps", "cfg", "sampler_name", "scheduler")},
+        "resolution": {k: resolution[k] for k in ("aspect", "megapixels", "custom", "width", "height")},
+        "seed": copy.deepcopy(SEED_OVERRIDES),
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    return safe
+
+
+def _read_preset(name):
+    path, safe = _preset_path(name)
+    if not path or not os.path.isfile(path):
+        return None, None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f), safe
+    except (OSError, ValueError):
+        return None, safe
+
+
+def apply_preset(payload):
+    global RES_ASPECT, RES_MEGAPIXELS, RES_CUSTOM, RES_CUSTOM_WIDTH, RES_CUSTOM_HEIGHT
+    global SETTINGS_REVISION, CURRENT_PRESET
+
+    generation = payload.get("generation") or {}
+    for key in ("text", "negative", "steps", "cfg", "sampler_name", "scheduler"):
+        if key not in generation:
+            GENERATION_OVERRIDES.pop(key, None)
+            continue
+        value = generation[key]
+        if key == "steps":
+            try:
+                value = max(1, min(10000, int(value)))
+            except (TypeError, ValueError):
+                continue
+        elif key == "cfg":
+            try:
+                value = max(0.0, min(100.0, float(value)))
+            except (TypeError, ValueError):
+                continue
+        elif key == "sampler_name":
+            if value not in SAMPLERS:
+                continue
+        elif key == "scheduler":
+            if value not in SCHEDULERS:
+                continue
+        else:
+            value = str(value)
+
+        if value == GENERATION_DEFAULTS.get(key):
+            GENERATION_OVERRIDES.pop(key, None)
+        else:
+            GENERATION_OVERRIDES[key] = value
+
+    resolution = payload.get("resolution") or {}
+    if resolution.get("aspect") in ASPECT_RATIOS:
+        RES_ASPECT = resolution["aspect"]
+    if "megapixels" in resolution:
+        try:
+            RES_MEGAPIXELS = max(0.1, min(8.0, float(resolution["megapixels"])))
+        except (TypeError, ValueError):
+            pass
+    if "custom" in resolution:
+        RES_CUSTOM = bool(resolution["custom"])
+    if "width" in resolution:
+        try:
+            RES_CUSTOM_WIDTH = max(16, min(8192, int(resolution["width"])))
+        except (TypeError, ValueError):
+            pass
+    if "height" in resolution:
+        try:
+            RES_CUSTOM_HEIGHT = max(16, min(8192, int(resolution["height"])))
+        except (TypeError, ValueError):
+            pass
+
+    SEED_OVERRIDES.clear()
+    seed = payload.get("seed")
+    if isinstance(seed, dict):
+        for node_id, override in seed.items():
+            if isinstance(override, dict) and override.get("mode") in ("random", "fixed"):
+                SEED_OVERRIDES[str(node_id)] = override
+
+    SETTINGS_REVISION += 1
+
+
 async def trigger_run():
     global IS_RUNNING, SKIP_NEXT_CAPTURE
     info = get_active_prompt()
@@ -590,7 +733,9 @@ async def handle_ws(request):
         "epoch": HISTORY_EPOCH,
         "loop_active": LOOP_ACTIVE,
         "seeds": get_seed_nodes(),
-        "settings": settings_state()
+        "settings": settings_state(),
+        "presets": list_presets(),
+        "current_preset": CURRENT_PRESET
     })
 
     try:
@@ -753,14 +898,64 @@ async def handle_post_settings(request):
     SETTINGS_REVISION += 1
 
     state = settings_state()
-    payload = {"type": "settings_update", "settings": state}
-    for ws in list(CONNECTED_WEBSOCKETS):
-        try:
-            await ws.send_json(payload)
-        except Exception:
-            pass
-
+    broadcast_json({"type": "settings_update", "settings": state})
     return web.json_response(state)
+
+
+def _presets_response():
+    return {
+        "presets": list_presets(),
+        "current": CURRENT_PRESET,
+        "settings": settings_state(),
+        "seeds": get_seed_nodes(),
+    }
+
+
+@PromptServer.instance.routes.get("/inx/presets")
+async def handle_get_presets(request):
+    return web.json_response({"presets": list_presets(), "current": CURRENT_PRESET})
+
+
+@PromptServer.instance.routes.post("/inx/presets")
+async def handle_post_presets(request):
+    global CURRENT_PRESET
+
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    action = data.get("action")
+    name = data.get("name", "")
+
+    if action == "save":
+        safe = _write_preset(name)
+        if not safe:
+            return web.json_response({"status": "error", "message": "Invalid preset name."}, status=400)
+        CURRENT_PRESET = safe
+    elif action == "load":
+        payload, safe = _read_preset(name)
+        if payload is None:
+            return web.json_response({"status": "error", "message": "Preset not found."}, status=404)
+        apply_preset(payload)
+        CURRENT_PRESET = safe
+    elif action == "delete":
+        path, safe = _preset_path(name)
+        if path and os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        if CURRENT_PRESET == safe:
+            CURRENT_PRESET = None
+    elif action == "unload":
+        _reset_settings()
+    else:
+        return web.json_response({"status": "error", "message": "Unknown preset action."}, status=400)
+
+    response = _presets_response()
+    broadcast_json({"type": "presets_update", **response})
+    return web.json_response(response)
 
 
 @PromptServer.instance.routes.get("/inx/seed")
@@ -838,8 +1033,7 @@ async def handle_shutdown(request):
 
 @PromptServer.instance.routes.post("/inx/kill_server")
 async def kill_server_endpoint(request):
-    global HISTORY_FILES, HISTORY_EPOCH, SETTINGS_REVISION
-    global RES_ASPECT, RES_MEGAPIXELS, RES_CUSTOM, RES_CUSTOM_WIDTH, RES_CUSTOM_HEIGHT
+    global HISTORY_FILES, HISTORY_EPOCH
 
     for f in HISTORY_FILES:
         if os.path.exists(f):
@@ -851,19 +1045,13 @@ async def kill_server_endpoint(request):
     HISTORY_EPOCH = uuid.uuid4().hex
 
     # Reset remote overrides so a fresh session never leaks settings into another workflow.
-    GENERATION_OVERRIDES.clear()
-    SEED_OVERRIDES.clear()
-    RES_ASPECT = "1:1"
-    RES_MEGAPIXELS = 1.5
-    RES_CUSTOM = False
-    RES_CUSTOM_WIDTH = 1224
-    RES_CUSTOM_HEIGHT = 1224
-    SETTINGS_REVISION += 1
+    _reset_settings()
 
     payloads = [
         {"type": "cleared", "epoch": HISTORY_EPOCH},
         {"type": "seed_update", "seeds": get_seed_nodes()},
         {"type": "settings_update", "settings": settings_state()},
+        {"type": "presets_update", "presets": list_presets(), "current": CURRENT_PRESET},
     ]
 
     for ws in list(CONNECTED_WEBSOCKETS):

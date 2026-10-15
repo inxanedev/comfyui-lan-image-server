@@ -1,4 +1,5 @@
 temp/
+presets/
 debug_log.txt
 __pycache__/
 *.pyc

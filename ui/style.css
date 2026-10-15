@@ -857,6 +857,16 @@ body {
     color: var(--text-dim);
 }
 
+.preset-actions {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+}
+
+.preset-actions .btn {
+    flex: 1 1 0;
+}
+
 .btn.clear-btn {
     width: 100%;
     flex-shrink: 0;
