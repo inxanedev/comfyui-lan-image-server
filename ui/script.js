@@ -80,6 +80,16 @@ let lastTapTime = 0;
 let lastTapX = 0;
 let lastTapY = 0;
 
+const PREVIEW_MIN_ZOOM = 1;
+const PREVIEW_MAX_ZOOM = 8;
+let previewScale = 1;
+let previewTx = 0;
+let previewTy = 0;
+const previewPointers = new Map();
+let previewPan = null;
+let previewPinch = null;
+let previewLastTap = { t: 0, x: 0, y: 0 };
+
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
 let zoomScale = 1;
@@ -1663,6 +1673,7 @@ function openImagePreview() {
     if (currentTab !== 'gallery' && currentTab !== 'live') return;
     if (!img || img.style.display === 'none' || !img.src) return;
 
+    resetPreviewTransform();
     previewImage.src = img.src;
     previewOverlay.classList.add('open');
     previewOverlay.setAttribute('aria-hidden', 'false');
@@ -1677,6 +1688,11 @@ function closeImagePreview(fromPopState) {
     if (!previewOpen) return;
     previewOpen = false;
     lastTapTime = 0;
+    previewLastTap = { t: 0, x: 0, y: 0 };
+    previewPointers.clear();
+    previewPan = null;
+    previewPinch = null;
+    resetPreviewTransform();
     previewOverlay.classList.remove('open');
     previewOverlay.setAttribute('aria-hidden', 'true');
     document.removeEventListener('keydown', onPreviewKeydown, true);
@@ -1697,11 +1713,186 @@ function onPreviewKeydown(e) {
     }
 }
 
+function resetPreviewTransform() {
+    previewScale = 1;
+    previewTx = 0;
+    previewTy = 0;
+    previewImage.style.transform = '';
+}
+
+function clampPreviewTransform() {
+    const rect = previewOverlay.getBoundingClientRect();
+    const scaledW = previewImage.offsetWidth * previewScale;
+    const scaledH = previewImage.offsetHeight * previewScale;
+    const maxTx = Math.max(0, (scaledW - rect.width) / 2);
+    const maxTy = Math.max(0, (scaledH - rect.height) / 2);
+    previewTx = Math.min(maxTx, Math.max(-maxTx, previewTx));
+    previewTy = Math.min(maxTy, Math.max(-maxTy, previewTy));
+}
+
+function applyPreviewTransform() {
+    if (previewScale <= 1.001) {
+        resetPreviewTransform();
+        return;
+    }
+    clampPreviewTransform();
+    previewImage.style.transform = `translate(${previewTx}px, ${previewTy}px) scale(${previewScale})`;
+}
+
+function handlePreviewTap(x, y, onImage) {
+    if (!onImage) {
+        // A tap on the blurred backdrop closes the preview.
+        previewLastTap = { t: 0, x: 0, y: 0 };
+        closeImagePreview(false);
+        return;
+    }
+    const now = Date.now();
+    if (now - previewLastTap.t < 350 && Math.hypot(x - previewLastTap.x, y - previewLastTap.y) < 40) {
+        previewLastTap = { t: 0, x: 0, y: 0 };
+        closeImagePreview(false);
+    } else {
+        previewLastTap = { t: now, x: x, y: y };
+    }
+}
+
+function onPreviewPointerDown(e) {
+    if (!previewOpen) return;
+    previewPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { previewOverlay.setPointerCapture(e.pointerId); } catch (err) {}
+
+    if (previewPointers.size === 2) {
+        const pts = Array.from(previewPointers.values());
+        const dx = pts[0].x - pts[1].x;
+        const dy = pts[0].y - pts[1].y;
+        previewPinch = {
+            startDist: Math.hypot(dx, dy) || 1,
+            startScale: previewScale,
+            startTx: previewTx,
+            startTy: previewTy,
+            startMidX: (pts[0].x + pts[1].x) / 2,
+            startMidY: (pts[0].y + pts[1].y) / 2
+        };
+        previewPan = null;
+    } else if (previewPointers.size === 1) {
+        previewPan = {
+            startX: e.clientX,
+            startY: e.clientY,
+            startTx: previewTx,
+            startTy: previewTy,
+            moved: false,
+            onImage: !!(previewImage && previewImage.contains(e.target))
+        };
+    }
+    e.preventDefault();
+}
+
+function onPreviewPointerMove(e) {
+    if (!previewPointers.has(e.pointerId)) return;
+    previewPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (previewPinch && previewPointers.size >= 2) {
+        e.preventDefault();
+        const pts = Array.from(previewPointers.values());
+        const dx = pts[0].x - pts[1].x;
+        const dy = pts[0].y - pts[1].y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const midX = (pts[0].x + pts[1].x) / 2;
+        const midY = (pts[0].y + pts[1].y) / 2;
+
+        const rect = previewOverlay.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+
+        const s0 = previewPinch.startScale;
+        const f0x = previewPinch.startMidX - cx;
+        const f0y = previewPinch.startMidY - cy;
+
+        const newScale = Math.min(PREVIEW_MAX_ZOOM, Math.max(PREVIEW_MIN_ZOOM, s0 * (dist / previewPinch.startDist)));
+        previewScale = newScale;
+
+        previewTx = previewPinch.startTx
+            + (s0 - newScale) * (f0x - previewPinch.startTx) / s0
+            + ((midX - cx) - f0x);
+        previewTy = previewPinch.startTy
+            + (s0 - newScale) * (f0y - previewPinch.startTy) / s0
+            + ((midY - cy) - f0y);
+
+        applyPreviewTransform();
+    } else if (previewPan && previewPointers.size === 1) {
+        const dx = e.clientX - previewPan.startX;
+        const dy = e.clientY - previewPan.startY;
+        if (Math.abs(dx) > 6 || Math.abs(dy) > 6) previewPan.moved = true;
+        if (previewScale > 1) {
+            e.preventDefault();
+            previewTx = previewPan.startTx + dx;
+            previewTy = previewPan.startTy + dy;
+            applyPreviewTransform();
+        }
+    }
+}
+
+function onPreviewPointerUp(e) {
+    if (!previewPointers.has(e.pointerId)) return;
+    const wasPan = previewPan;
+    previewPointers.delete(e.pointerId);
+    try { previewOverlay.releasePointerCapture(e.pointerId); } catch (err) {}
+
+    if (previewPointers.size === 0) {
+        // A tap (no drag, no pinch) closes the view.
+        if (wasPan && !wasPan.moved && !previewPinch) {
+            handlePreviewTap(wasPan.startX, wasPan.startY, wasPan.onImage);
+        }
+        previewPan = null;
+        previewPinch = null;
+    } else if (previewPointers.size === 1) {
+        // Dropped from a pinch to a single finger; keep panning from here.
+        const pt = Array.from(previewPointers.values())[0];
+        previewPan = {
+            startX: pt.x,
+            startY: pt.y,
+            startTx: previewTx,
+            startTy: previewTy,
+            moved: true,
+            onImage: false
+        };
+        previewPinch = null;
+    }
+}
+
 function initPreviewGestures() {
     if (!previewOverlay) return;
 
-    previewOverlay.addEventListener('click', (e) => {
-        if (e.target === previewOverlay) closeImagePreview(false);
+    previewOverlay.addEventListener('pointerdown', onPreviewPointerDown);
+    previewOverlay.addEventListener('pointermove', onPreviewPointerMove);
+    previewOverlay.addEventListener('pointerup', onPreviewPointerUp);
+    previewOverlay.addEventListener('pointercancel', onPreviewPointerUp);
+
+    previewOverlay.addEventListener('wheel', (e) => {
+        if (!previewOpen) return;
+        e.preventDefault();
+        const rect = previewOverlay.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const oldScale = previewScale;
+        const factor = Math.exp(-e.deltaY * 0.0015);
+        const newScale = Math.min(PREVIEW_MAX_ZOOM, Math.max(PREVIEW_MIN_ZOOM, oldScale * factor));
+        previewTx = previewTx + (oldScale - newScale) * ((e.clientX - cx) - previewTx) / oldScale;
+        previewTy = previewTy + (oldScale - newScale) * ((e.clientY - cy) - previewTy) / oldScale;
+        previewScale = newScale;
+        applyPreviewTransform();
+    }, { passive: false });
+
+    if (previewImage) {
+        previewImage.addEventListener('load', () => {
+            if (previewOpen) applyPreviewTransform();
+        });
+    }
+
+    // Desktop convenience: double-clicking the image (or backdrop) closes the preview.
+    previewOverlay.addEventListener('dblclick', (e) => {
+        if (e.target === previewOverlay || (previewImage && previewImage.contains(e.target))) {
+            closeImagePreview(false);
+        }
     });
 
     viewer.addEventListener('dblclick', (e) => {

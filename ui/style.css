@@ -460,6 +460,8 @@ body {
     object-fit: contain;
     border-radius: 12px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    transform-origin: center center;
+    will-change: transform;
     -webkit-user-drag: none;
     user-select: none;
 }
