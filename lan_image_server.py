@@ -550,6 +550,16 @@ def _resolve_output_path(info):
     return os.path.join(base, info.get("subfolder", ""), info.get("filename", ""))
 
 
+def _upscaled_indices():
+    """Indices of history images that were produced by the upscaler."""
+    indices = []
+    for i, path in enumerate(HISTORY_FILES):
+        key = _image_key(os.path.basename(path))
+        if key and key[1] > 0:
+            indices.append(i)
+    return indices
+
+
 def _next_upscale_name(source_path):
     """Names the upscaled image so it sorts right after the source (base_sub)."""
     key = _image_key(os.path.basename(source_path)) or (NEXT_IMAGE_INDEX, 0)
@@ -570,6 +580,7 @@ async def _run_upscale_watch(prompt_id, insert_at, input_file, source_path):
     global UPSCALER_PENDING, HISTORY_FILES, HISTORY_EPOCH
 
     entry = None
+    error = None
     deadline = time.time() + 3600.0
     while time.time() < deadline:
         await asyncio.sleep(1.0)
@@ -605,11 +616,14 @@ async def _run_upscale_watch(prompt_id, insert_at, input_file, source_path):
                     "total": len(HISTORY_FILES),
                     "epoch": HISTORY_EPOCH,
                     "focus": position,
+                    "upscaled": _upscaled_indices(),
                 })
             else:
-                broadcast_json({"type": "workflow_status", "status": "error", "message": "Upscaled image not found."})
+                error = "Upscaled image not found."
+        elif entry is None:
+            error = "Upscale timed out."
         else:
-            broadcast_json({"type": "workflow_status", "status": "error", "message": "Upscale produced no image."})
+            error = "Upscale produced no image."
     finally:
         try:
             if input_file and os.path.exists(input_file):
@@ -617,7 +631,7 @@ async def _run_upscale_watch(prompt_id, insert_at, input_file, source_path):
         except OSError:
             pass
         UPSCALER_PENDING = None
-        broadcast_json({"type": "upscale_status", "running": False})
+        broadcast_json({"type": "upscale_status", "running": False, "error": error})
 
 
 async def trigger_run():
@@ -878,7 +892,7 @@ async def handle_delete_image(request):
 
     # Indices shift after a removal, so bust the client-side image cache.
     HISTORY_EPOCH = uuid.uuid4().hex
-    broadcast_json({"type": "update", "total": len(HISTORY_FILES), "epoch": HISTORY_EPOCH})
+    broadcast_json({"type": "update", "total": len(HISTORY_FILES), "epoch": HISTORY_EPOCH, "upscaled": _upscaled_indices()})
     return web.json_response({"status": "deleted", "total": len(HISTORY_FILES), "epoch": HISTORY_EPOCH})
 
 
@@ -972,7 +986,8 @@ async def handle_ws(request):
         "presets": list_presets(),
         "current_preset": CURRENT_PRESET,
         "upscaler_available": _upscaler_ready(),
-        "upscale_running": UPSCALER_PENDING is not None
+        "upscale_running": UPSCALER_PENDING is not None,
+        "upscaled": _upscaled_indices()
     })
 
     try:
@@ -1376,7 +1391,8 @@ class ServeImageLAN:
         payload = {
             "type": "update",
             "total": len(HISTORY_FILES),
-            "epoch": HISTORY_EPOCH
+            "epoch": HISTORY_EPOCH,
+            "upscaled": _upscaled_indices()
         }
 
         broadcast_json(payload)

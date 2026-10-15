@@ -31,6 +31,7 @@ const copyPromptBtn = document.getElementById('copyPromptBtn');
 const stripMetadata = document.getElementById('stripMetadata');
 const workflowBar = document.getElementById('workflowBar');
 const progressPill = document.getElementById('progressPill');
+const upscaleBadge = document.getElementById('upscaleBadge');
 const presetSelect = document.getElementById('presetSelect');
 const presetDeleteBtn = document.getElementById('presetDeleteBtn');
 const presetNotice = document.getElementById('presetNotice');
@@ -54,6 +55,7 @@ let progressMax = null;
 let runInProgress = false;
 let upscalerAvailable = false;
 let upscaling = false;
+let upscaledIndices = new Set();
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
@@ -352,6 +354,7 @@ function switchTab(tab) {
     }
 
     updateProgressUI();
+    updateUpscaleBadge();
 }
 
 function updateWorkflowUI(data) {
@@ -992,6 +995,7 @@ async function updateGalleryImage(slideDirection) {
         reuseBtn.disabled = true;
         copyPromptBtn.disabled = true;
         updateUpscaleButton();
+        updateUpscaleBadge();
         displayedImageKey = null;
         return;
     }
@@ -1005,6 +1009,7 @@ async function updateGalleryImage(slideDirection) {
     reuseBtn.disabled = false;
     copyPromptBtn.disabled = false;
     updateUpscaleButton();
+    updateUpscaleBadge();
 
     const index = currentIndex - 1;
     const key = `gallery:${imageEpoch}:${index}`;
@@ -1124,6 +1129,10 @@ function connectWS() {
 
                     totalImages = data.total;
 
+                    if (Array.isArray(data.upscaled)) {
+                        upscaledIndices = new Set(data.upscaled);
+                    }
+
                     if (wasAtLatest) {
                         currentIndex = totalImages;
                     }
@@ -1172,7 +1181,12 @@ function connectWS() {
 
                     if (data.focus !== undefined && data.focus !== null) {
                         currentIndex = Math.max(1, Math.min(totalImages, Number(data.focus) + 1));
-                        if (currentTab === 'gallery') updateGalleryImage();
+                        if (currentTab !== 'gallery') {
+                            switchTab('gallery');
+                        } else {
+                            updateGalleryImage();
+                            updateUpscaleBadge();
+                        }
                     }
 
                     if (data.type === 'init') {
@@ -1205,6 +1219,7 @@ function connectWS() {
                     syncEpoch(data.epoch);
                     totalImages = 0;
                     currentIndex = 0;
+                    upscaledIndices = new Set();
                     if (livePreviewOwned && livePreviewUrl && livePreviewUrl.startsWith('blob:')) {
                         URL.revokeObjectURL(livePreviewUrl);
                     }
@@ -1316,6 +1331,8 @@ function updateUpscaleButton() {
 function applyUpscaleState(data) {
     if (!data) return;
     if (data.available !== undefined) upscalerAvailable = !!data.available;
+
+    const wasUpscaling = upscaling;
     if (data.running !== undefined) upscaling = !!data.running;
 
     if (upscaling) {
@@ -1326,8 +1343,24 @@ function applyUpscaleState(data) {
     } else {
         runBtn.disabled = false;
         loopBtn.disabled = false;
+        if (wasUpscaling) {
+            if (data.error) {
+                status.textContent = 'Upscale failed';
+                status.style.color = '#F44336';
+                showAlert(data.error, 'Upscale');
+            } else {
+                status.textContent = 'Done.';
+                status.style.color = '#30D158';
+            }
+        }
     }
     updateUpscaleButton();
+}
+
+function updateUpscaleBadge() {
+    if (!upscaleBadge) return;
+    const show = currentTab === 'gallery' && totalImages > 0 && upscaledIndices.has(currentIndex - 1);
+    upscaleBadge.classList.toggle('visible', show);
 }
 
 async function upscaleCurrentImage() {
