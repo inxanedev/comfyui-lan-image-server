@@ -120,7 +120,7 @@ One node that outputs all of the generation settings, which you then control fro
 The panel has three tabs: **Gallery**, **Live**, and **Settings**.
 
 ### Gallery
-Browse every image generated this session. Use **Prev** / **Next** and the counter (e.g. `3 / 7`) — the buttons stretch across the bar for easy tapping. Pinch to zoom, drag to pan. The gallery **persists across restarts**, so nothing is lost when ComfyUI is closed.
+Browse every image generated this session. Use **Prev** / **Next** and the counter (e.g. `3 / 7`) — the buttons stretch across the bar for easy tapping. On a touch screen, **swipe left/right** to move between images. Pinch to zoom, drag to pan. The gallery **persists across restarts**, so nothing is lost when ComfyUI is closed.
 
 The **↓ button** on the right opens the gallery actions: **Save Image**, **Save All** (a `.zip`), **Reuse Settings**, **Copy Prompt**, a **Remove metadata** toggle, and **Delete Image** (removes the selected image from the gallery and disk).
 
